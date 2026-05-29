@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>in.gov.uidai.dp.velocity.engine</groupId>
+    <artifactId>uid-dp-velocity-engine-auth-flink-job</artifactId>
+    <version>1.0.0-RELEASE</version>
+    <packaging>jar</packaging>
+    <name>uid-dp-velocity-engine-auth-flink-job</name>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <target.java.version>17</target.java.version>
+        <flink.version>2.2.0</flink.version>
+        <flink.kafka.connector.version>4.0.1-2.0</flink.kafka.connector.version>
+        <kafka.version>4.1.2</kafka.version>
+        <hadoop.version>3.4.0</hadoop.version>
+        <iceberg.version>1.10.1</iceberg.version>
+        <jackson.version>2.17.0</jackson.version>
+        <lombok.version>1.18.36</lombok.version>
+        <log4j.version>2.25.4</log4j.version>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>apache.snapshots</id>
+            <name>Apache Development Snapshot Repository</name>
+            <url>https://repository.apache.org/content/repositories/snapshots/</url>
+            <releases><enabled>false</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Security pinning — force upgrade of transitive deps -->
+            <dependency><groupId>com.google.guava</groupId><artifactId>guava</artifactId><version>33.1.0-jre</version></dependency>
+            <dependency><groupId>org.apache.avro</groupId><artifactId>avro</artifactId><version>1.11.3</version></dependency>
+            <dependency><groupId>com.google.protobuf</groupId><artifactId>protobuf-java</artifactId><version>3.25.5</version></dependency>
+            <dependency><groupId>org.apache.zookeeper</groupId><artifactId>zookeeper</artifactId><version>3.9.2</version></dependency>
+            <dependency><groupId>org.apache.commons</groupId><artifactId>commons-configuration2</artifactId><version>2.10.1</version></dependency>
+            <dependency><groupId>com.nimbusds</groupId><artifactId>nimbus-jose-jwt</artifactId><version>9.37.3</version></dependency>
+            <dependency><groupId>org.codehaus.jettison</groupId><artifactId>jettison</artifactId><version>1.5.4</version></dependency>
+            <dependency><groupId>jakarta.activation</groupId><artifactId>jakarta.activation-api</artifactId><version>2.1.3</version></dependency>
+            <!-- Jetty pinning -->
+            <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-server</artifactId><version>9.4.54.v20240208</version></dependency>
+            <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-http</artifactId><version>9.4.54.v20240208</version></dependency>
+            <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-util</artifactId><version>9.4.54.v20240208</version></dependency>
+            <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-io</artifactId><version>9.4.54.v20240208</version></dependency>
+            <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-webapp</artifactId><version>9.4.54.v20240208</version></dependency>
+            <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-servlet</artifactId><version>9.4.54.v20240208</version></dependency>
+            <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-security</artifactId><version>9.4.54.v20240208</version></dependency>
+            <!-- Netty pinning -->
+            <dependency><groupId>io.netty</groupId><artifactId>netty-handler</artifactId><version>4.1.120.Final</version></dependency>
+            <dependency><groupId>io.netty</groupId><artifactId>netty-common</artifactId><version>4.1.120.Final</version></dependency>
+            <dependency><groupId>io.netty</groupId><artifactId>netty-codec</artifactId><version>4.1.120.Final</version></dependency>
+            <dependency><groupId>io.netty</groupId><artifactId>netty-transport</artifactId><version>4.1.120.Final</version></dependency>
+            <dependency><groupId>io.netty</groupId><artifactId>netty-resolver</artifactId><version>4.1.120.Final</version></dependency>
+            <dependency><groupId>io.netty</groupId><artifactId>netty-buffer</artifactId><version>4.1.120.Final</version></dependency>
+            <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId><version>4.1.120.Final</version></dependency>
+            <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-unix-common</artifactId><version>4.1.120.Final</version></dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- ═══════════════════ Flink Core (provided — in cluster classpath) ═══════════════════ -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-core</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-streaming-java</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-base</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-table-common</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-table-runtime</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ═══════════════════ Kafka Connector (provided) ═══════════════════ -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <version>${flink.kafka.connector.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+
+
+        <!-- ═══════════════════ RocksDB state backend (provided) ═══════════════════ -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-statebackend-rocksdb</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ═══════════════════ Logging (runtime) ═══════════════════ -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <version>${log4j.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>${log4j.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>${log4j.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ═══════════════════ SLF4J (provided — flink ships it) ═══════════════════ -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.17</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ═══════════════════ Jackson (bundled — flink version may differ) ═══════════════════ -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+
+
+        <!-- ═══════════════════ HyperLogLog (high-cardinality COUNT_DISTINCT) ═══════════════════ -->
+        <dependency>
+            <groupId>com.clearspring.analytics</groupId>
+            <artifactId>stream</artifactId>
+            <version>2.9.8</version>
+        </dependency>
+
+        <!-- ═══════════════════ Lombok ═══════════════════ -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ═══════════════════ Test ═══════════════════ -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-clients</artifactId>
+            <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.27</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                    <release>${target.java.version}</release>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+                <configuration>
+                    <useModulePath>false</useModulePath>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.14</version>
+                <executions>
+                    <execution><goals><goal>prepare-agent</goal></goals></execution>
+                    <execution><id>report</id><phase>test</phase><goals><goal>report</goal></goals></execution>
+                </executions>
+            </plugin>
+
+            <!-- Fat JAR — excludes Flink/Kafka/Logging (cluster provides them) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <excludes>
+                                    <exclude>org.apache.flink:*</exclude>
+                                    <exclude>org.apache.kafka:*</exclude>
+                                    <exclude>org.apache.logging.log4j:*</exclude>
+                                    <exclude>org.slf4j:*</exclude>
+                                </excludes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/LICENSE*</exclude>
+                                        <exclude>META-INF/NOTICE*</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>in.gov.uidai.dp.velocity.engine.AuthDemoDriver</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>remove-original-jar</id>
+                        <phase>package</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <delete><fileset dir="${project.build.directory}" includes="original-*.jar"/></delete>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

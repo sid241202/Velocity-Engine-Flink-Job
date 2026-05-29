@@ -1,0 +1,24 @@
+﻿package in.gov.uidai.dp.velocity.engine.sinks;
+
+import in.gov.uidai.dp.velocity.engine.model.AggregationResult;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+/**
+ * Converts {@link AggregationResult} to JSON string suitable for ClickHouse JSONEachRow format.
+ */
+public class ClickHouseResultConverter {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private ClickHouseResultConverter() {}
+
+    public static String toJsonEachRow(AggregationResult result) {
+        try {
+            return MAPPER.writeValueAsString(result);
+        } catch (JsonProcessingException e) {
+            // Should never happen for simple POJOs, but fail safe
+            return "{}";
+        }
+    }
+}

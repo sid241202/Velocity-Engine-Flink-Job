@@ -1,0 +1,91 @@
+﻿package in.gov.uidai.dp.velocity.engine.functions;
+
+import in.gov.uidai.dp.velocity.engine.model.Event;
+import in.gov.uidai.dp.velocity.engine.model.Keyed;
+import in.gov.uidai.dp.velocity.engine.model.VelocityRule;
+import in.gov.uidai.dp.velocity.engine.utils.FilterEvaluator;
+import in.gov.uidai.dp.velocity.engine.utils.KeysExtractor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.flink.api.common.state.BroadcastState;
+import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.ReadOnlyBroadcastState;
+import org.apache.flink.api.common.typeinfo.TypeHint;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.streaming.api.functions.co.BroadcastProcessFunction;
+import org.apache.flink.util.Collector;
+
+import java.util.Map;
+
+/**
+ * First step of rule processing: Evaluates filters and dynamically keys events.
+ *
+ * <p>Takes raw {@link Event}s and broadcasted {@link VelocityRule}s.
+ * For each event, evaluates it against all ACTIVE rules mapped to its source topic.
+ * If the event passes the rule's filters, it is cloned, tagged with the rule's ID
+ * and computed group key, and emitted downstream to be grouped and aggregated.
+ *
+ * <p>This function runs immediately after the Kafka source and before the keyBy.
+ */
+@Slf4j
+public class DynamicKeyFunction extends BroadcastProcessFunction<Event, VelocityRule, Keyed<Event, String, String>> {
+
+    private static final long serialVersionUID = 1L;
+
+    /** Broadcast state descriptor: Rule ID -> VelocityRule */
+    public static final MapStateDescriptor<String, VelocityRule> RULE_STATE_DESC =
+            new MapStateDescriptor<>(
+                    "rules-broadcast-state",
+                    Types.STRING,
+                    TypeInformation.of(new TypeHint<VelocityRule>() {})
+            );
+
+    private final String cluster;
+
+    public DynamicKeyFunction(String cluster) {
+        this.cluster = cluster;
+    }
+
+    @Override
+    public void processElement(Event event, ReadOnlyContext ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
+        ReadOnlyBroadcastState<String, VelocityRule> rulesState = ctx.getBroadcastState(RULE_STATE_DESC);
+
+        String eventSourceTopic = String.valueOf(event.getFields().get("_source_topic"));
+        if (eventSourceTopic == null || "null".equals(eventSourceTopic)) {
+            return; // invalid event, dropped
+        }
+
+        for (Map.Entry<String, VelocityRule> entry : rulesState.immutableEntries()) {
+            VelocityRule rule = entry.getValue();
+
+            // 1. Target routing check (Cluster + Topic)
+            if (!rule.isActive()) continue;
+            if (!cluster.equalsIgnoreCase(rule.getTargetCluster())) continue;
+            if (!eventSourceTopic.equalsIgnoreCase(rule.getTargetSourceTopic())) continue;
+
+            // 2. Pre-filter evaluation
+            if (FilterEvaluator.evaluate(event, rule.getFilters())) {
+
+                // 3. Extract Grouping Key
+                String groupKey = KeysExtractor.getKey(rule.getGrouping().getKeys(), event);
+
+                // 4. Emit Keyed Tuple Downstream
+                // The key space downstream will be (RuleID + GroupKey)
+                out.collect(new Keyed<>(event, groupKey, rule.getRuleId()));
+            }
+        }
+    }
+
+    @Override
+    public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
+        BroadcastState<String, VelocityRule> rulesState = ctx.getBroadcastState(RULE_STATE_DESC);
+
+        if (rule.isDeleted()) {
+            rulesState.remove(rule.getRuleId());
+            log.info("Rule DELETED from broadcast state: {}", rule.getRuleId());
+        } else {
+            rulesState.put(rule.getRuleId(), rule);
+            log.info("Rule updated in broadcast state: {} (status: {})", rule.getRuleId(), rule.getStatus());
+        }
+    }
+}

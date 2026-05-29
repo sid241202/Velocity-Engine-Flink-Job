@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.watermark;
+package in.gov.uidai.dp.velocity.engine.watermark;
 
 import in.gov.uidai.dp.velocity.engine.model.Event;
 import lombok.extern.slf4j.Slf4j;

@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.aggregation;
+package in.gov.uidai.dp.velocity.engine.aggregation;
 
 import in.gov.uidai.dp.velocity.engine.model.AggregationSpec;
 import in.gov.uidai.dp.velocity.engine.model.Event;

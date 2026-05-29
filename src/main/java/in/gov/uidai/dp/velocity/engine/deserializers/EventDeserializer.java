@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.deserializers;
+package in.gov.uidai.dp.velocity.engine.deserializers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.gov.uidai.dp.velocity.engine.model.Event;
@@ -10,21 +10,25 @@ import org.apache.flink.util.Collector;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 /**
  * Deserializes Kafka records into {@link Event} objects.
  *
- * <p>Key responsibilities beyond basic JSON deserialization:
+ * <p>
+ * Key responsibilities beyond basic JSON deserialization:
  * <ul>
- *   <li>Injects {@code _source_topic}: the Kafka topic name — used for rule routing in
- *       {@link in.gov.uidai.dp.velocity.engine.functions.DynamicKeyFunction}.</li>
- *   <li>Injects {@code _cluster}: the cluster identifier from job config.</li>
- *   <li>Injects {@code _event_timestamp_epoch_ms} (Long): converts the configured timestamp
- *       field (ISO string or epoch millis) to epoch millis for watermark assignment.</li>
- *   <li>Keeps {@code _data} as a raw JSON String — parsed lazily on first field access
- *       via {@link in.gov.uidai.dp.velocity.engine.utils.FieldExtractor} to avoid
- *       deserializing 130+ fields for events that get filtered out immediately.</li>
+ * <li>Injects {@code _source_topic}: the Kafka topic name — used for rule
+ * routing in
+ * {@link in.gov.uidai.dp.velocity.engine.functions.DynamicKeyFunction}.</li>
+ * <li>Injects {@code _cluster}: the cluster identifier from job config.</li>
+ * <li>Injects {@code _event_timestamp_epoch_ms} (Long): converts the configured
+ * timestamp
+ * field (ISO string or epoch millis) to epoch millis for watermark
+ * assignment.</li>
+ * <li>Keeps {@code _data} as a raw JSON String — parsed lazily on first field
+ * access
+ * via {@link in.gov.uidai.dp.velocity.engine.utils.FieldExtractor} to avoid
+ * deserializing 130+ fields for events that get filtered out immediately.</li>
  * </ul>
  */
 @Slf4j
@@ -35,12 +39,12 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
     private final String sourceTopic;
     private final String cluster;
     private final String eventTimestampField;
-    private final String eventTimestampFormat;  // ISO_STRING | EPOCH_MILLIS
+    private final String eventTimestampFormat; // ISO_STRING | EPOCH_MILLIS
 
     private transient ObjectMapper objectMapper;
 
     public EventDeserializer(String sourceTopic, String cluster,
-                             String eventTimestampField, String eventTimestampFormat) {
+            String eventTimestampField, String eventTimestampFormat) {
         this.sourceTopic = sourceTopic;
         this.cluster = cluster;
         this.eventTimestampField = eventTimestampField;

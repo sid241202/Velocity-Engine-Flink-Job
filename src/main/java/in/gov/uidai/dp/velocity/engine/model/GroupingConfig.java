@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.model;
+package in.gov.uidai.dp.velocity.engine.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;

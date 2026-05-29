@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.model;
+package in.gov.uidai.dp.velocity.engine.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

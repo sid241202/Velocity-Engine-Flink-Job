@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.utils;
+package in.gov.uidai.dp.velocity.engine.utils;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

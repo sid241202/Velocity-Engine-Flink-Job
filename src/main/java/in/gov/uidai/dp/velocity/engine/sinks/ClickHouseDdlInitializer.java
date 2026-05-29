@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.sinks;
+package in.gov.uidai.dp.velocity.engine.sinks;
 
 import in.gov.uidai.dp.velocity.engine.config.ClickHouseSinkConfig;
 import lombok.extern.slf4j.Slf4j;

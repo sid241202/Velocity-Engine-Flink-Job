@@ -1,9 +1,11 @@
-﻿package in.gov.uidai.dp.velocity.engine.sinks;
+package in.gov.uidai.dp.velocity.engine.sinks;
 
 import in.gov.uidai.dp.velocity.engine.config.ClickHouseSinkConfig;
 import in.gov.uidai.dp.velocity.engine.model.AggregationResult;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.flink.streaming.api.functions.sink.SinkFunction;
+import org.apache.flink.api.connector.sink2.Sink;
+import org.apache.flink.api.connector.sink2.SinkWriter;
+import org.apache.flink.api.connector.sink2.WriterInitContext;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,7 +14,6 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -29,16 +30,29 @@ public class ClickHouseSinkBuilder {
 
     private ClickHouseSinkBuilder() {}
 
-    public static SinkFunction<AggregationResult> build(ClickHouseSinkConfig config) {
+    public static Sink<AggregationResult> build(ClickHouseSinkConfig config) {
         if (config.isAutoCreateDdl()) {
             ClickHouseDdlInitializer.initialize(config);
         }
         return new AsyncClickHouseHttpSink(config);
     }
 
-    public static class AsyncClickHouseHttpSink implements SinkFunction<AggregationResult> {
+    public static class AsyncClickHouseHttpSink implements Sink<AggregationResult> {
         private static final long serialVersionUID = 1L;
 
+        private final ClickHouseSinkConfig config;
+
+        public AsyncClickHouseHttpSink(ClickHouseSinkConfig config) {
+            this.config = config;
+        }
+
+        @Override
+        public SinkWriter<AggregationResult> createWriter(WriterInitContext context) {
+            return new ClickHouseSinkWriter(config);
+        }
+    }
+
+    public static class ClickHouseSinkWriter implements SinkWriter<AggregationResult> {
         private final String hostUrl;
         private final String user;
         private final String password;
@@ -46,40 +60,36 @@ public class ClickHouseSinkBuilder {
         private final String table;
         private final int batchSize;
 
-        private transient List<AggregationResult> buffer;
-        private transient HttpClient httpClient;
-        private transient ExecutorService executor;
+        private final List<AggregationResult> buffer;
+        private final HttpClient httpClient;
+        private final ExecutorService executor;
 
-        public AsyncClickHouseHttpSink(ClickHouseSinkConfig config) {
+        public ClickHouseSinkWriter(ClickHouseSinkConfig config) {
             this.hostUrl = config.getFirstHostUrl();
             this.user = config.getUser();
             this.password = config.getPassword();
             this.database = config.getDatabase();
             this.table = config.getTable();
             this.batchSize = config.getMaxBufferSize();
+
+            this.buffer = new ArrayList<>(batchSize);
+            this.executor = Executors.newFixedThreadPool(2);
+            this.httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .executor(executor)
+                    .build();
         }
 
-        private void init() {
-            if (buffer == null) {
-                buffer = new ArrayList<>(batchSize);
-                executor = Executors.newFixedThreadPool(2);
-                httpClient = HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofSeconds(10))
-                        .executor(executor)
-                        .build();
+        @Override
+        public void write(AggregationResult value, Context context) {
+            buffer.add(value);
+            if (buffer.size() >= batchSize) {
+                flush(false);
             }
         }
 
         @Override
-        public void invoke(AggregationResult value, Context context) throws Exception {
-            init();
-            buffer.add(value);
-            if (buffer.size() >= batchSize) {
-                flush();
-            }
-        }
-
-        private void flush() {
+        public void flush(boolean endOfInput) {
             if (buffer.isEmpty()) return;
 
             List<AggregationResult> toFlush = new ArrayList<>(buffer);
@@ -102,18 +112,20 @@ public class ClickHouseSinkBuilder {
                     .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                     .build();
 
-            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenAccept(response -> {
-                        if (response.statusCode() != 200) {
-                            log.error("ClickHouse insert failed ({}): {}", response.statusCode(), response.body());
-                            // In a real production setup with Flink, failures should ideally be captured via
-                            // Async I/O or thrown to fail the checkpoint. For the boilerplate, logging is sufficient.
-                        }
-                    })
-                    .exceptionally(ex -> {
-                        log.error("ClickHouse request failed", ex);
-                        return null;
-                    });
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200) {
+                    log.error("ClickHouse insert failed ({}): {}", response.statusCode(), response.body());
+                }
+            } catch (Exception ex) {
+                log.error("ClickHouse request failed", ex);
+            }
+        }
+
+        @Override
+        public void close() {
+            flush(true);
+            executor.shutdown();
         }
     }
 }

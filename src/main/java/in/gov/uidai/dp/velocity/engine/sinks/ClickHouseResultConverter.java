@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.sinks;
+package in.gov.uidai.dp.velocity.engine.sinks;
 
 import in.gov.uidai.dp.velocity.engine.model.AggregationResult;
 import com.fasterxml.jackson.core.JsonProcessingException;

@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.utils;
+package in.gov.uidai.dp.velocity.engine.utils;
 
 import in.gov.uidai.dp.velocity.engine.model.HavingCondition;
 import in.gov.uidai.dp.velocity.engine.model.HavingThresholds;

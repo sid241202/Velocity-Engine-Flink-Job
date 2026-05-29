@@ -1,4 +1,4 @@
-﻿package in.gov.uidai.dp.velocity.engine.utils;
+package in.gov.uidai.dp.velocity.engine.utils;
 
 import lombok.extern.slf4j.Slf4j;
 

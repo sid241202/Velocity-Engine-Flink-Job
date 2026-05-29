@@ -44,6 +44,9 @@ public class WindowingConfig implements Serializable {
     @JsonProperty("timestamp_field")
     private String timestampField = "_event_timestamp_epoch_ms";
 
+    @JsonProperty("timestamp_format")
+    private String timestampFormat = "EPOCH_MILLIS";
+
     /** Window size in milliseconds. */
     @JsonProperty("size_ms")
     private long sizeMs;

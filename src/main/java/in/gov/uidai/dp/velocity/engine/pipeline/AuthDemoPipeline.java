@@ -21,6 +21,7 @@ import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ExternalizedCheckpointRetention;
 
 import in.gov.uidai.dp.velocity.engine.config.ClickHouseSinkConfig;
@@ -36,7 +37,9 @@ import java.util.Collections;
 public class AuthDemoPipeline {
 
         public void buildAndExecute() throws Exception {
-                StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+                Configuration conf = new Configuration();
+                conf.setString("state.backend.rocksdb.options-factory", "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
+                StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
 
                 // 1. Environment and Checkpoint Config
                 env.setParallelism(16);
@@ -46,8 +49,6 @@ public class AuthDemoPipeline {
                 env.getCheckpointConfig().setMinPauseBetweenCheckpoints(AuthDemoConfig.CHECKPOINT_MIN_PAUSE_MS);
                 env.getCheckpointConfig().setExternalizedCheckpointRetention(ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
                 env.getCheckpointConfig().enableUnalignedCheckpoints();
-        
-                // State backend should be configured via flink-conf.yaml in Flink 2.x
 
                 // 2. Build Event Sources (Single topic for Auth Demo)
                 KafkaSource<Event> kafkaSource = KafkaSource.<Event>builder()

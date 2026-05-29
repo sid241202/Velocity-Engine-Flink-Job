@@ -73,7 +73,24 @@ public class RuleEvaluatorFunction
         }
 
         // 2. Add event to bucket state
-        long eventTs = (Long) keyedEvent.getWrapped().getFields().get(rule.getWindowing().getEffectiveTimestampField());
+        long eventTs = -1L;
+        Object rawTs = keyedEvent.getWrapped().getFields().get(rule.getWindowing().getEffectiveTimestampField());
+        if (rawTs != null) {
+            try {
+                if ("ISO_STRING".equalsIgnoreCase(rule.getWindowing().getTimestampFormat())) {
+                    eventTs = TimeUtils.isoStringToEpochMs(String.valueOf(rawTs));
+                } else {
+                    eventTs = Long.parseLong(String.valueOf(rawTs));
+                }
+            } catch (Exception ignored) {}
+        }
+        if (eventTs <= 0) {
+            Object fallbackTs = keyedEvent.getWrapped().getFields().get("_event_timestamp_epoch_ms");
+            if (fallbackTs != null) {
+                eventTs = (Long) fallbackTs;
+            }
+        }
+        
         bucketStateManager.addEvent(rule, keyedEvent.getWrapped(), eventTs);
 
         // 3. Register timer for the next slide evaluation

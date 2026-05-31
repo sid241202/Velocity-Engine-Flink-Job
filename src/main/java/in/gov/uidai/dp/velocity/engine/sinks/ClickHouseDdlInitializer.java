@@ -46,7 +46,7 @@ public class ClickHouseDdlInitializer {
                 windowEnd String,
                 windowType String,
                 timeType String,
-                aggregationResults String,
+                aggregationResults Map(String, Float64),
                 thresholdBreached UInt8,
                 severityLevel String,
                 eventCount UInt64,

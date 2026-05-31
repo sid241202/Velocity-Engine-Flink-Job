@@ -144,7 +144,6 @@ public class RuleEvaluatorFunction
         // 3. Construct ClickHouse Result
         String ruleId = rule.getRuleId();
         String groupKey = getGroupKey(ctx.getCurrentKey(), ruleId); // key is ruleId + "|" + groupKey
-        String resultJson = mapper.writeValueAsString(results);
 
         AggregationResult result = new AggregationResult(
                 ruleId,
@@ -156,7 +155,7 @@ public class RuleEvaluatorFunction
                 TimeUtils.epochMsToIstString(windowEndTs),
                 rule.getWindowing().getType(),
                 rule.getWindowing().getTimeType(),
-                resultJson,
+                results,
                 breached ? 1 : 0,
                 rule.getSeverityLevel(),
                 windowEventCount,
@@ -175,7 +174,7 @@ public class RuleEvaluatorFunction
                     rule.getCluster(),
                     result.getWindowStart(),
                     result.getWindowEnd(),
-                    resultJson,
+                    results,
                     result.getEvaluatedAt());
             ctx.output(ALERT_TAG, alert);
         }

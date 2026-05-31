@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
+import java.util.Map;
 
 /**
  * Output record emitted for every window evaluation, regardless of whether the
@@ -41,10 +42,10 @@ public class AggregationResult implements Serializable {
     private String timeType;
 
     /**
-     * JSON string of computed aggregation values by alias.
-     * E.g. {@code {"unique_aua_count":7,"total_txns":12}}
+     * Map of computed aggregation values by alias.
+     * Stored natively as ClickHouse Map(String, Float64).
      */
-    private String aggregationResults;
+    private Map<String, Double> aggregationResults;
 
     /** 1 if having thresholds were breached, 0 otherwise. ClickHouse UInt8. */
     private int thresholdBreached;

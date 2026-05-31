@@ -13,13 +13,13 @@ public class RocksDBOptions implements RocksDBOptionsFactory {
     private static final long serialVersionUID = 1L;
 
     @Override
-    public DBOptions createDBOptions(DBOptions currentOptions, Collection<AutoCloseable> handlesToClose) {
+public DBOptions createDBOptions(DBOptions currentOptions, Collection<AutoCloseable> handlesToClose) {
         currentOptions.setIncreaseParallelism(4);
         return currentOptions;
     }
 
     @Override
-    public ColumnFamilyOptions createColumnOptions(ColumnFamilyOptions currentOptions, Collection<AutoCloseable> handlesToClose) {
+public ColumnFamilyOptions createColumnOptions(ColumnFamilyOptions currentOptions, Collection<AutoCloseable> handlesToClose) {
         currentOptions.setLevel0FileNumCompactionTrigger(4);
         currentOptions.setCompactionStyle(CompactionStyle.LEVEL);
 

@@ -17,7 +17,7 @@ public class AuthDeduplicationFunction extends KeyedProcessFunction<String, Even
     private transient ValueState<Boolean> seenState;
 
     @Override
-    public void open(OpenContext parameters) {
+public void open(OpenContext parameters) {
 
         StateTtlConfig ttlConfig = StateTtlConfig.newBuilder(Duration.ofMinutes(15))
                 .setUpdateType(StateTtlConfig.UpdateType.OnReadAndWrite)
@@ -31,12 +31,12 @@ public class AuthDeduplicationFunction extends KeyedProcessFunction<String, Even
     }
 
     @Override
-    public void processElement(Event event, Context ctx, Collector<Event> out) throws Exception {
+public void processElement(Event event, Context ctx, Collector<Event> out) throws Exception {
 
         String authCode = FieldExtractor.extractString(event, "_data.authCode");
 
         if (authCode == null || authCode.isEmpty()) {
-            // Drop events with no auth code
+
             return;
         }
 

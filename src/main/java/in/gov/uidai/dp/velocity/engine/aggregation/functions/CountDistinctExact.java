@@ -16,8 +16,7 @@ public class CountDistinctExact {
     private final MapState<String, String> state;
 
     public CountDistinctExact(RuntimeContext ctx) {
-        // Value is comma-separated string of distinct values.
-        // We use String to avoid complex serialization of Set in RocksDB.
+
         MapStateDescriptor<String, String> desc = new MapStateDescriptor<>("distinct_exact_acc", Types.STRING, Types.STRING);
         this.state = ctx.getMapState(desc);
     }
@@ -27,9 +26,9 @@ public class CountDistinctExact {
         if (current == null) {
             state.put(bucketKey, value);
         } else {
-            // Check if value already exists (rough check to avoid deserializing Set on every event)
+
             if (!current.equals(value) && !current.contains(value + ",") && !current.contains("," + value) && !current.endsWith("," + value)) {
-                // Double check by parsing to set
+
                 Set<String> set = new HashSet<>(java.util.Arrays.asList(current.split(",")));
                 if (set.add(value)) {
                     state.put(bucketKey, current + "," + value);
@@ -57,5 +56,8 @@ public class CountDistinctExact {
             }
         }
         return globalSet.size();
+    }
+    public boolean isEmpty() throws Exception {
+        return state.isEmpty();
     }
 }

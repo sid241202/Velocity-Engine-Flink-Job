@@ -9,22 +9,6 @@ import lombok.NoArgsConstructor;
 import java.io.Serializable;
 import java.util.List;
 
-/**
- * Root rule object. Deserialised from the new Velocity Engine rule schema.
- *
- * <p>Example:
- * <pre>
- * {
- *   "rule_metadata": { "rule_id": "rule_brute_force_12", "status": "ACTIVE", ... },
- *   "execution_routing": { "target_cluster": "HDC_CLUSTER_1", "target_source_topic": "auth_events_raw" },
- *   "filters": [ { "field": "_data.authResult", "operator": "EQUALS", "value": "y" } ],
- *   "grouping": { "keys": ["_data.enrolmentReferenceId"] },
- *   "windowing": { "type": "SLIDING", "time_type": "EVENT_TIME", "size_ms": 300000, "slide_ms": 60000 },
- *   "aggregations": [ { "alias": "unique_aua", "field": "_data.aua", "function": "COUNT_DISTINCT" } ],
- *   "having_thresholds": { "logic_operator": "AND", "conditions": [ ... ] }
- * }
- * </pre>
- */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -34,10 +18,10 @@ public class VelocityRule implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @JsonProperty("rule_metadata")
-    private RuleMetadata ruleMetadata;
+private RuleMetadata ruleMetadata;
 
     @JsonProperty("execution_routing")
-    private ExecutionRouting executionRouting;
+private ExecutionRouting executionRouting;
 
     private List<FilterCondition> filters;
 
@@ -48,9 +32,7 @@ public class VelocityRule implements Serializable {
     private List<AggregationSpec> aggregations;
 
     @JsonProperty("having_thresholds")
-    private HavingThresholds havingThresholds;
-
-    // ── Convenience delegates ──────────────────────────────────────────────────
+private HavingThresholds havingThresholds;
 
     public String getRuleId()        { return ruleMetadata != null ? ruleMetadata.getRuleId()        : null; }
     public String getRuleName()      { return ruleMetadata != null ? ruleMetadata.getRuleName()      : null; }

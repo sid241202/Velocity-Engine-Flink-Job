@@ -17,14 +17,6 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * Flink Sink for ClickHouse.
- *
- * <p>Since official ClickHouse JDBC connectors often struggle with Flink 2.2.0 compatibility,
- * this implements an asynchronous HTTP-based batch sink using Java 11+ HttpClient.
- * It batches {@link AggregationResult} records and flushes them to the ClickHouse HTTP API
- * using JSONEachRow format.
- */
 @Slf4j
 public class ClickHouseSinkBuilder {
 
@@ -47,7 +39,7 @@ public class ClickHouseSinkBuilder {
         }
 
         @Override
-        public SinkWriter<AggregationResult> createWriter(WriterInitContext context) {
+public SinkWriter<AggregationResult> createWriter(WriterInitContext context) {
             return new ClickHouseSinkWriter(config);
         }
     }
@@ -81,7 +73,7 @@ public class ClickHouseSinkBuilder {
         }
 
         @Override
-        public void write(AggregationResult value, Context context) {
+public void write(AggregationResult value, Context context) {
             buffer.add(value);
             if (buffer.size() >= batchSize) {
                 flush(false);
@@ -89,7 +81,7 @@ public class ClickHouseSinkBuilder {
         }
 
         @Override
-        public void flush(boolean endOfInput) {
+public void flush(boolean endOfInput) {
             if (buffer.isEmpty()) return;
 
             List<AggregationResult> toFlush = new ArrayList<>(buffer);
@@ -125,7 +117,7 @@ public class ClickHouseSinkBuilder {
         }
 
         @Override
-        public void close() {
+public void close() {
             flush(true);
             executor.shutdown();
         }

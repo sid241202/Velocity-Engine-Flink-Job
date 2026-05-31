@@ -7,17 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
 
-/**
- * Extracts field values from an {@link Event} using dot-notation paths.
- *
- * <h3>Lazy {@code _data} parsing</h3>
- * <p>The {@code _data} field is stored as a raw JSON String by
- * {@link in.gov.uidai.dp.velocity.engine.deserializers.EventDeserializer}.
- * It is only parsed into a {@code Map<String, Object>} on the first access of any
- * {@code _data.xxx} field, and the result is cached in {@link Event#parsedData}.
- * This means events that are filtered out before reaching aggregation never
- * pay the cost of parsing 130+ fields.
- */
 @Slf4j
 public final class FieldExtractor {
 
@@ -26,23 +15,11 @@ public final class FieldExtractor {
 
     private FieldExtractor() {}
 
-    /**
-     * Extract a field value as a String.
-     *
-     * @param event     the event to extract from
-     * @param fieldPath dot-notation path, e.g. {@code "_data.aua"} or {@code "_event_type"}
-     * @return String value, or null if not found
-     */
     public static String extractString(Event event, String fieldPath) {
         Object val = extractObject(event, fieldPath);
         return val != null ? String.valueOf(val) : null;
     }
 
-    /**
-     * Extract a field value as a Double (for numeric aggregations).
-     *
-     * @return Double value, or null if not found / not parseable
-     */
     public static Double extractDouble(Event event, String fieldPath) {
         Object val = extractObject(event, fieldPath);
         if (val == null) return null;
@@ -55,35 +32,23 @@ public final class FieldExtractor {
         }
     }
 
-    /**
-     * Extract a raw Object value. The core extraction logic used by all typed variants.
-     */
     public static Object extractObject(Event event, String fieldPath) {
         if (event == null || fieldPath == null || fieldPath.isBlank()) return null;
 
         if (fieldPath.startsWith("_data.")) {
-            // Lazy parse _data
+
             Map<String, Object> data = parseDataIfNeeded(event);
             if (data == null) return null;
 
-            // Navigate dot-notation inside _data (e.g. "_data.address.city")
             String subPath = fieldPath.substring("_data.".length());
             return navigate(data, subPath);
         }
 
-        // Top-level field: direct map lookup
         return event.getFields().get(fieldPath);
     }
 
-    // ── Internals ─────────────────────────────────────────────────────────────
-
-    /**
-     * Parse the raw {@code _data} JSON string on first access and cache in
-     * {@link Event#parsedData}. Idempotent and thread-safe within single Flink
-     * operator (single-threaded processing).
-     */
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> parseDataIfNeeded(Event event) {
+private static Map<String, Object> parseDataIfNeeded(Event event) {
         if (event.parsedData != null) return event.parsedData;
 
         Object rawData = event.getFields().get("_data");
@@ -103,18 +68,14 @@ public final class FieldExtractor {
         }
     }
 
-    /**
-     * Navigate a nested map using dot-separated keys.
-     * E.g. path="address.city" in map={"address":{"city":"Delhi"}} returns "Delhi".
-     */
     @SuppressWarnings("unchecked")
-    private static Object navigate(Map<String, Object> map, String dotPath) {
+private static Object navigate(Map<String, Object> map, String dotPath) {
         String[] parts = dotPath.split("\\.", 2);
         Object val = map.get(parts[0]);
         if (val == null || parts.length == 1) return val;
         if (val instanceof Map) {
             return navigate((Map<String, Object>) val, parts[1]);
         }
-        return null; // Can't navigate into a non-map
+        return null;
     }
 }

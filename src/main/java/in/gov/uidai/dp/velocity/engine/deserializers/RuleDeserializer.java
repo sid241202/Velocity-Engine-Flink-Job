@@ -20,7 +20,7 @@ public class RuleDeserializer implements KafkaRecordDeserializationSchema<Veloci
     private transient ObjectMapper objectMapper;
 
     @Override
-    public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<VelocityRule> out) throws IOException {
+public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<VelocityRule> out) throws IOException {
         if (record.value() == null || record.value().length == 0) {
             log.warn("Received null/blank rule message — skipping");
             return;
@@ -35,7 +35,6 @@ public class RuleDeserializer implements KafkaRecordDeserializationSchema<Veloci
             }
             VelocityRule rule = objectMapper.readValue(value.trim(), VelocityRule.class);
 
-            // Validate minimum required fields
             if (rule.getRuleMetadata() == null || rule.getRuleMetadata().getRuleId() == null) {
                 log.warn("Rule missing rule_metadata.rule_id — dropping: {}", value);
                 return;
@@ -47,7 +46,6 @@ public class RuleDeserializer implements KafkaRecordDeserializationSchema<Veloci
                 return;
             }
 
-            // DELETED rules are allowed through — they trigger removal from broadcast state
             if (!rule.isDeleted()) {
                 if (rule.getGrouping() == null || rule.getGrouping().getKeys() == null
                         || rule.getGrouping().getKeys().isEmpty()) {
@@ -78,7 +76,7 @@ public class RuleDeserializer implements KafkaRecordDeserializationSchema<Veloci
     }
 
     @Override
-    public TypeInformation<VelocityRule> getProducedType() {
+public TypeInformation<VelocityRule> getProducedType() {
         return TypeInformation.of(VelocityRule.class);
     }
 }

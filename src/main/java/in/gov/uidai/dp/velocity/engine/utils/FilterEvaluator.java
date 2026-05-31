@@ -6,19 +6,11 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 
-/**
- * Evaluates a list of {@link FilterCondition}s against an {@link Event}.
- * All conditions must pass (implicit AND between conditions).
- * Short-circuits on first failure for efficiency.
- */
 @Slf4j
 public final class FilterEvaluator {
 
     private FilterEvaluator() {}
 
-    /**
-     * @return true if all conditions pass (or filters is null/empty), false otherwise
-     */
     public static boolean evaluate(Event event, List<FilterCondition> filters) {
         if (filters == null || filters.isEmpty()) return true;
         for (FilterCondition condition : filters) {
@@ -59,7 +51,7 @@ public final class FilterEvaluator {
     }
 
     @SuppressWarnings("unchecked")
-    private static boolean evaluateIn(Object eventVal, Object condVal) {
+private static boolean evaluateIn(Object eventVal, Object condVal) {
         if (!(condVal instanceof List)) return false;
         String evStr = strOf(eventVal).toLowerCase();
         for (Object item : (List<?>) condVal) {

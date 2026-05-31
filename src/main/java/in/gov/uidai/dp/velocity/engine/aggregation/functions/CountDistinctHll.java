@@ -26,7 +26,7 @@ public class CountDistinctHll {
         byte[] current = state.get(bucketKey);
         HyperLogLog hll;
         if (current == null) {
-            hll = new HyperLogLog(14); // 16k registers, std error 1.04%
+            hll = new HyperLogLog(14);
         } else {
             hll = HyperLogLog.Builder.build(current);
         }
@@ -51,5 +51,8 @@ public class CountDistinctHll {
             }
         }
         return globalHll.cardinality();
+    }
+    public boolean isEmpty() throws Exception {
+        return state.isEmpty();
     }
 }

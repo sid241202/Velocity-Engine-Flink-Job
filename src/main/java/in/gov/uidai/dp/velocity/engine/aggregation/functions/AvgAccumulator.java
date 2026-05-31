@@ -14,7 +14,6 @@ import java.util.Map;
 
 public class AvgAccumulator {
 
-    // Tuple2<Sum, Count>
     private final MapState<String, Tuple2<Double, Long>> state;
 
     public AvgAccumulator(RuntimeContext ctx) {
@@ -53,5 +52,8 @@ public class AvgAccumulator {
             }
         }
         return count == 0 ? 0.0 : sum / count;
+    }
+    public boolean isEmpty() throws Exception {
+        return state.isEmpty();
     }
 }

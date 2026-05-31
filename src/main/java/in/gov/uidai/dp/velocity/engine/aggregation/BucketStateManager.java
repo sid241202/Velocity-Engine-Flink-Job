@@ -11,10 +11,6 @@ import org.apache.flink.api.common.functions.RuntimeContext;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Manages the dispatch of events to the correct state accumulators and
- * computes final aggregated values across all unexpired buckets for a window.
- */
 public class BucketStateManager {
 
     private final CountAccumulator countAcc;
@@ -24,8 +20,7 @@ public class BucketStateManager {
     private final MaxAccumulator maxAcc;
     private final CountDistinctExact distinctExactAcc;
     private final CountDistinctHll distinctHllAcc;
-    
-    // Dedicated accumulator for tracking raw event counts natively
+
     private final CountAccumulator rawEventCountAcc;
 
     public BucketStateManager(RuntimeContext ctx) {
@@ -39,13 +34,9 @@ public class BucketStateManager {
         this.rawEventCountAcc = new CountAccumulator(ctx);
     }
 
-    /**
-     * Dispatch an event to the appropriate accumulators for its time bucket.
-     */
     public void addEvent(VelocityRule rule, Event event, long eventTs) throws Exception {
         long bucketTs = TimeUtils.floorToSlide(eventTs, rule.getWindowing().getEffectiveSlideMs());
 
-        // Always silently track total raw events in this bucket
         String rawBucketKey = TimeUtils.bucketKey("_raw_events_", bucketTs);
         rawEventCountAcc.add(rawBucketKey);
 
@@ -80,10 +71,6 @@ public class BucketStateManager {
         }
     }
 
-    /**
-     * Calculate final aggregation results for all buckets that fall within
-     * the window [windowStartTs, windowEndTs). Expired buckets are pruned.
-     */
     public Map<String, Double> computeWindowAndPrune(VelocityRule rule, long windowStartTs, long windowEndTs) throws Exception {
         Map<String, Double> results = new HashMap<>();
 
@@ -111,7 +98,6 @@ public class BucketStateManager {
             results.put(alias, finalVal);
         }
 
-        // Add raw event count to results mapping so the Evaluator can extract it easily
         double rawCount = rawEventCountAcc.computeAndPrune("_raw_events_", windowStartTs, windowEndTs);
         results.put("_raw_events_", rawCount);
 
@@ -119,8 +105,8 @@ public class BucketStateManager {
     }
 
     public boolean isEmpty() throws Exception {
-        return countAcc.isEmpty() && sumAcc.isEmpty() && avgAcc.isEmpty() && 
-               minAcc.isEmpty() && maxAcc.isEmpty() && distinctExactAcc.isEmpty() && 
+        return countAcc.isEmpty() && sumAcc.isEmpty() && avgAcc.isEmpty() &&
+               minAcc.isEmpty() && maxAcc.isEmpty() && distinctExactAcc.isEmpty() &&
                distinctHllAcc.isEmpty() && rawEventCountAcc.isEmpty();
     }
 

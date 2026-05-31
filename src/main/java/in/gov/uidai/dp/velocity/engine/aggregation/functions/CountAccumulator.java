@@ -32,7 +32,7 @@ public class CountAccumulator {
             if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
                 long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
                 if (bucketTs < windowStartTs) {
-                    iter.remove(); // prune expired
+                    iter.remove();
                 } else if (bucketTs < windowEndTs) {
                     total += entry.getValue();
                 }

@@ -17,22 +17,11 @@ import org.apache.flink.util.Collector;
 
 import java.util.Map;
 
-/**
- * First step of rule processing: Evaluates filters and dynamically keys events.
- *
- * <p>Takes raw {@link Event}s and broadcasted {@link VelocityRule}s.
- * For each event, evaluates it against all ACTIVE rules mapped to its source topic.
- * If the event passes the rule's filters, it is cloned, tagged with the rule's ID
- * and computed group key, and emitted downstream to be grouped and aggregated.
- *
- * <p>This function runs immediately after the Kafka source and before the keyBy.
- */
 @Slf4j
 public class DynamicKeyFunction extends BroadcastProcessFunction<Event, VelocityRule, Keyed<Event, String, String>> {
 
     private static final long serialVersionUID = 1L;
 
-    /** Broadcast state descriptor: Rule ID -> VelocityRule */
     public static final MapStateDescriptor<String, VelocityRule> RULE_STATE_DESC =
             new MapStateDescriptor<>(
                     "rules-broadcast-state",
@@ -47,37 +36,32 @@ public class DynamicKeyFunction extends BroadcastProcessFunction<Event, Velocity
     }
 
     @Override
-    public void processElement(Event event, ReadOnlyContext ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
+public void processElement(Event event, ReadOnlyContext ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
         ReadOnlyBroadcastState<String, VelocityRule> rulesState = ctx.getBroadcastState(RULE_STATE_DESC);
 
         String eventSourceTopic = String.valueOf(event.getFields().get("_source_topic"));
         if (eventSourceTopic == null || "null".equals(eventSourceTopic)) {
-            return; // invalid event, dropped
+            return;
         }
 
         for (Map.Entry<String, VelocityRule> entry : rulesState.immutableEntries()) {
             VelocityRule rule = entry.getValue();
 
-            // 1. Target routing check (Cluster + Topic)
             if (!rule.isActive()) continue;
             if (!cluster.equalsIgnoreCase(rule.getTargetCluster())) continue;
             if (!eventSourceTopic.equalsIgnoreCase(rule.getTargetSourceTopic())) continue;
 
-            // 2. Pre-filter evaluation
             if (FilterEvaluator.evaluate(event, rule.getFilters())) {
 
-                // 3. Extract Grouping Key
                 String groupKey = KeysExtractor.getKey(rule.getGrouping().getKeys(), event);
 
-                // 4. Emit Keyed Tuple Downstream
-                // The key space downstream will be (RuleID + GroupKey)
                 out.collect(new Keyed<>(event, groupKey, rule.getRuleId()));
             }
         }
     }
 
     @Override
-    public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
+public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
         BroadcastState<String, VelocityRule> rulesState = ctx.getBroadcastState(RULE_STATE_DESC);
 
         if (rule.isDeleted()) {

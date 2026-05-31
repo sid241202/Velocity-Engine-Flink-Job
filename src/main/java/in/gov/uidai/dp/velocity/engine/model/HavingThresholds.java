@@ -9,13 +9,14 @@ import lombok.NoArgsConstructor;
 import java.io.Serializable;
 import java.util.List;
 
-@Data @NoArgsConstructor @AllArgsConstructor @JsonIgnoreProperties(ignoreUnknown = true)
+@Data
+@NoArgsConstructor @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class HavingThresholds implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    /** AND | OR */
     @JsonProperty("logic_operator")
-    private String logicOperator;
+private String logicOperator;
 
     private List<HavingCondition> conditions;
 

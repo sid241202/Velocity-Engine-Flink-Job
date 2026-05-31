@@ -17,17 +17,16 @@ public class RuleMetadata implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @JsonProperty("rule_id")
-    private String ruleId;
+private String ruleId;
 
     @JsonProperty("rule_name")
-    private String ruleName;
+private String ruleName;
 
-    /** ACTIVE | PAUSED | DELETED */
     private String status;
 
     @JsonProperty("severity_level")
-    private String severityLevel;
+private String severityLevel;
 
     @JsonProperty("penalty_ttl_seconds")
-    private int penaltyTtlSeconds;
+private int penaltyTtlSeconds;
 }

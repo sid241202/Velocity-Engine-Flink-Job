@@ -9,10 +9,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
-/**
- * Executes CREATE DATABASE and CREATE TABLE on ClickHouse via HTTP if enabled.
- * Creates local and distributed tables if use-distributed is true.
- */
 @Slf4j
 public class ClickHouseDdlInitializer {
 
@@ -25,11 +21,9 @@ public class ClickHouseDdlInitializer {
         String hostUrl = config.getFirstHostUrl();
         String clusterClause = config.isUseDistributed() ? " ON CLUSTER " + config.getClusterName() : "";
 
-        // 1. Create Database
         String createDb = "CREATE DATABASE IF NOT EXISTS " + config.getDatabase() + clusterClause;
         executeDdl(client, hostUrl, config, createDb);
 
-        // 2. Create Local Table (ReplicatedMergeTree)
         String localTable = config.isUseDistributed() ? config.getTable() + "_local" : config.getTable();
         String engine = config.isUseDistributed()
                 ? String.format("ReplicatedMergeTree('%s/{shard}', '{replica}')", config.getZookeeperPath())
@@ -57,7 +51,6 @@ public class ClickHouseDdlInitializer {
 
         executeDdl(client, hostUrl, config, createLocalTable);
 
-        // 3. Create Distributed Table if requested
         if (config.isUseDistributed()) {
             String createDistributed = String.format("""
                 CREATE TABLE IF NOT EXISTS %s.%s %s AS %s.%s

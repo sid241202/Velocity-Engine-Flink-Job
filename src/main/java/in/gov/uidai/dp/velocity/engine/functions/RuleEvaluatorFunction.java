@@ -15,15 +15,6 @@ import org.apache.flink.util.OutputTag;
 
 import java.util.Map;
 
-/**
- * Core windowing and aggregation logic.
- * Keyed by {@code (RuleID + GroupKey)}.
- *
- * <p>
- * Uses processing-time timers to periodically evaluate rule windows based on
- * {@link WindowingConfig#slideMs}. Bypasses native Flink Window operators
- * to prevent watermark-related stalls on high-cardinality idle keys.
- */
 @Slf4j
 public class RuleEvaluatorFunction
         extends KeyedBroadcastProcessFunction<String, Keyed<Event, String, String>, VelocityRule, AggregationResult> {
@@ -36,11 +27,8 @@ public class RuleEvaluatorFunction
     private final String cluster;
     private transient ObjectMapper mapper;
 
-    // --- State ---
     private transient BucketStateManager bucketStateManager;
 
-    // Stores the compact rule snapshot so timers (which can't read broadcast state)
-    // know what to evaluate.
     private transient ValueState<RuleSnapshot> ruleSnapshotState;
 
     public RuleEvaluatorFunction(String cluster) {
@@ -48,7 +36,7 @@ public class RuleEvaluatorFunction
     }
 
     @Override
-    public void open(OpenContext parameters) throws Exception {
+public void open(OpenContext parameters) throws Exception {
         mapper = new ObjectMapper();
         bucketStateManager = new BucketStateManager(getRuntimeContext());
 
@@ -58,21 +46,19 @@ public class RuleEvaluatorFunction
     }
 
     @Override
-    public void processElement(Keyed<Event, String, String> keyedEvent, ReadOnlyContext ctx,
+public void processElement(Keyed<Event, String, String> keyedEvent, ReadOnlyContext ctx,
             Collector<AggregationResult> out) throws Exception {
         VelocityRule rule = ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).get(keyedEvent.getId());
 
         if (rule == null || !rule.isActive()) {
-            return; // Rule was deleted or paused since DynamicKeyFunction passed it
+            return;
         }
 
-        // 1. Update rule snapshot for timers
         RuleSnapshot snapshot = ruleSnapshotState.value();
         if (snapshot == null || !snapshot.getRuleName().equals(rule.getRuleName())) {
             ruleSnapshotState.update(RuleSnapshot.fromRule(rule, cluster));
         }
 
-        // 2. Add event to bucket state
         long eventTs = -1L;
         Object rawTs = keyedEvent.getWrapped().getFields().get(rule.getWindowing().getEffectiveTimestampField());
         if (rawTs != null) {
@@ -90,10 +76,9 @@ public class RuleEvaluatorFunction
                 eventTs = (Long) fallbackTs;
             }
         }
-        
+
         bucketStateManager.addEvent(rule, keyedEvent.getWrapped(), eventTs);
 
-        // 3. Register timer for the next slide evaluation
         long currentProcessingTime = ctx.timerService().currentProcessingTime();
         long slideMs = rule.getWindowing().getEffectiveSlideMs();
         long nextTimer = TimeUtils.floorToSlide(currentProcessingTime, slideMs) + slideMs;
@@ -101,49 +86,36 @@ public class RuleEvaluatorFunction
     }
 
     @Override
-    public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<AggregationResult> out)
+public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<AggregationResult> out)
             throws Exception {
-        // Broadcast state is automatically handled by Flink via RULE_STATE_DESC map.
-        // The read-only version is accessed in processElement.
+
     }
 
     @Override
-    public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {
+public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {
         RuleSnapshot rule = ruleSnapshotState.value();
         if (rule == null) {
-            // State might have been cleared or rule deleted, ignore timer
+
             return;
         }
 
-        // Timer fired at exactly `timestamp`. The evaluation covers the window ending
-        // at `timestamp`.
         long windowEndTs = timestamp;
         long windowStartTs = windowEndTs - rule.getWindowing().getSizeMs();
 
-        // 1. Compute aggregations and prune old state
-        // Re-construct a mock VelocityRule to pass to bucket manager (since it requires
-        // AggregationSpec)
         VelocityRule mockRule = new VelocityRule();
         mockRule.setAggregations(rule.getAggregations());
 
         Map<String, Double> results = bucketStateManager.computeWindowAndPrune(mockRule, windowStartTs, windowEndTs);
 
-        // Extract raw event count and remove it from JSON results mapping
         long windowEventCount = 0L;
         if (results.containsKey("_raw_events_")) {
             windowEventCount = results.remove("_raw_events_").longValue();
         }
 
-        // If no events fell in this window (all counts 0), we could optionally skip
-        // emission.
-        // For now, emit 0-state windows to ClickHouse for continuity in charts.
-
-        // 2. Evaluate Having Thresholds
         boolean breached = HavingEvaluator.evaluate(rule.getHavingThresholds(), results);
 
-        // 3. Construct ClickHouse Result
         String ruleId = rule.getRuleId();
-        String groupKey = getGroupKey(ctx.getCurrentKey(), ruleId); // key is ruleId + "|" + groupKey
+        String groupKey = getGroupKey(ctx.getCurrentKey(), ruleId);
 
         AggregationResult result = new AggregationResult(
                 ruleId,
@@ -162,7 +134,6 @@ public class RuleEvaluatorFunction
                 TimeUtils.currentIstString());
         out.collect(result);
 
-        // 4. Emit Alert to KeyDB Side Output if breached
         if (breached) {
             VelocityAlert alert = new VelocityAlert(
                     ruleId,
@@ -174,12 +145,11 @@ public class RuleEvaluatorFunction
                     rule.getCluster(),
                     result.getWindowStart(),
                     result.getWindowEnd(),
-                    results,
+                    mapper.writeValueAsString(results),
                     result.getEvaluatedAt());
             ctx.output(ALERT_TAG, alert);
         }
 
-        // 5. Register next timer OR clear state if empty
         if (bucketStateManager.isEmpty()) {
             ruleSnapshotState.clear();
             log.debug("State is empty for key {}, clearing snapshot and stopping timers.", ctx.getCurrentKey());
@@ -191,7 +161,7 @@ public class RuleEvaluatorFunction
     }
 
     private String getGroupKey(String compositeKey, String ruleId) {
-        // compositeKey = ruleId + "|" + groupKey (from keyBy function in pipeline)
+
         if (compositeKey != null && compositeKey.startsWith(ruleId + "|")) {
             return compositeKey.substring(ruleId.length() + 1);
         }

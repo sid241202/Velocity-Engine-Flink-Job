@@ -40,4 +40,7 @@ public class CountAccumulator {
         }
         return total;
     }
+    public boolean isEmpty() throws Exception {
+        return state.isEmpty();
+    }
 }

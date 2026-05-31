@@ -40,4 +40,7 @@ public class SumAccumulator {
         }
         return total;
     }
+    public boolean isEmpty() throws Exception {
+        return state.isEmpty();
+    }
 }

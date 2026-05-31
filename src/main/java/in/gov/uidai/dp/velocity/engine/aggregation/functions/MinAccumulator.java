@@ -44,4 +44,8 @@ public class MinAccumulator {
         }
         return found ? min : 0.0;
     }
+
+    public boolean isEmpty() throws Exception {
+        return state.isEmpty();
+    }
 }

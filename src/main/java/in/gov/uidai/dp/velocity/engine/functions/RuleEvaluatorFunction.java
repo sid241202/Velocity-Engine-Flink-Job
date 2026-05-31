@@ -128,6 +128,12 @@ public class RuleEvaluatorFunction
 
         Map<String, Double> results = bucketStateManager.computeWindowAndPrune(mockRule, windowStartTs, windowEndTs);
 
+        // Extract raw event count and remove it from JSON results mapping
+        long windowEventCount = 0L;
+        if (results.containsKey("_raw_events_")) {
+            windowEventCount = results.remove("_raw_events_").longValue();
+        }
+
         // If no events fell in this window (all counts 0), we could optionally skip
         // emission.
         // For now, emit 0-state windows to ClickHouse for continuity in charts.
@@ -153,7 +159,7 @@ public class RuleEvaluatorFunction
                 resultJson,
                 breached ? 1 : 0,
                 rule.getSeverityLevel(),
-                0L, // event count approximation could be added to bucket state if needed
+                windowEventCount,
                 TimeUtils.currentIstString());
         out.collect(result);
 
@@ -174,10 +180,13 @@ public class RuleEvaluatorFunction
             ctx.output(ALERT_TAG, alert);
         }
 
-        // 5. Register next timer (keep the loop going as long as state exists)
-        // Note: In a production system, we'd add logic to stop registering timers if
-        // state is totally empty
-        // to prevent infinite timers on dead keys. For now, we continue polling.
+        // 5. Register next timer OR clear state if empty
+        if (bucketStateManager.isEmpty()) {
+            ruleSnapshotState.clear();
+            log.debug("State is empty for key {}, clearing snapshot and stopping timers.", ctx.getCurrentKey());
+            return;
+        }
+
         long nextTimer = timestamp + rule.getWindowing().getEffectiveSlideMs();
         ctx.timerService().registerProcessingTimeTimer(nextTimer);
     }

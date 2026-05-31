@@ -24,6 +24,9 @@ public class BucketStateManager {
     private final MaxAccumulator maxAcc;
     private final CountDistinctExact distinctExactAcc;
     private final CountDistinctHll distinctHllAcc;
+    
+    // Dedicated accumulator for tracking raw event counts natively
+    private final CountAccumulator rawEventCountAcc;
 
     public BucketStateManager(RuntimeContext ctx) {
         this.countAcc = new CountAccumulator(ctx);
@@ -33,6 +36,7 @@ public class BucketStateManager {
         this.maxAcc = new MaxAccumulator(ctx);
         this.distinctExactAcc = new CountDistinctExact(ctx);
         this.distinctHllAcc = new CountDistinctHll(ctx);
+        this.rawEventCountAcc = new CountAccumulator(ctx);
     }
 
     /**
@@ -40,6 +44,10 @@ public class BucketStateManager {
      */
     public void addEvent(VelocityRule rule, Event event, long eventTs) throws Exception {
         long bucketTs = TimeUtils.floorToSlide(eventTs, rule.getWindowing().getEffectiveSlideMs());
+
+        // Always silently track total raw events in this bucket
+        String rawBucketKey = TimeUtils.bucketKey("_raw_events_", bucketTs);
+        rawEventCountAcc.add(rawBucketKey);
 
         for (AggregationSpec spec : rule.getAggregations()) {
             String bucketKey = TimeUtils.bucketKey(spec.getAlias(), bucketTs);
@@ -103,7 +111,17 @@ public class BucketStateManager {
             results.put(alias, finalVal);
         }
 
+        // Add raw event count to results mapping so the Evaluator can extract it easily
+        double rawCount = rawEventCountAcc.computeAndPrune("_raw_events_", windowStartTs, windowEndTs);
+        results.put("_raw_events_", rawCount);
+
         return results;
+    }
+
+    public boolean isEmpty() throws Exception {
+        return countAcc.isEmpty() && sumAcc.isEmpty() && avgAcc.isEmpty() && 
+               minAcc.isEmpty() && maxAcc.isEmpty() && distinctExactAcc.isEmpty() && 
+               distinctHllAcc.isEmpty() && rawEventCountAcc.isEmpty();
     }
 
     private Double asDouble(Object val) {

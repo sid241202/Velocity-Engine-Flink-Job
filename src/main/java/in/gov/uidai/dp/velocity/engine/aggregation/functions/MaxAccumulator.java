@@ -44,4 +44,8 @@ public class MaxAccumulator {
         }
         return found ? max : 0.0;
     }
+
+    public boolean isEmpty() throws Exception {
+        return state.isEmpty();
+    }
 }

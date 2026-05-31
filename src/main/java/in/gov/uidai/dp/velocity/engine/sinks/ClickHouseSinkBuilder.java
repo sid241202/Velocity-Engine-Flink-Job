@@ -116,9 +116,11 @@ public class ClickHouseSinkBuilder {
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() != 200) {
                     log.error("ClickHouse insert failed ({}): {}", response.statusCode(), response.body());
+                    throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode());
                 }
             } catch (Exception ex) {
                 log.error("ClickHouse request failed", ex);
+                throw new RuntimeException("Failed to write batch to ClickHouse", ex);
             }
         }
 

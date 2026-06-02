@@ -12,7 +12,7 @@ public class ClickHouseSinkConfig implements Serializable {
     private String user = "default";
     private String password;
     private String clusterName;
-    private boolean useDistributed = false;
+    private boolean useDistributed = true;
     private String zookeeperPath;
     private String database;
     private String table = "rule_results";

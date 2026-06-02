@@ -36,7 +36,7 @@ public class RuleEvaluatorFunction
     }
 
     @Override
-public void open(OpenContext parameters) throws Exception {
+    public void open(OpenContext parameters) throws Exception {
         mapper = new ObjectMapper();
         bucketStateManager = new BucketStateManager(getRuntimeContext());
 
@@ -46,7 +46,7 @@ public void open(OpenContext parameters) throws Exception {
     }
 
     @Override
-public void processElement(Keyed<Event, String, String> keyedEvent, ReadOnlyContext ctx,
+    public void processElement(Keyed<Event, String, String> keyedEvent, ReadOnlyContext ctx,
             Collector<AggregationResult> out) throws Exception {
         VelocityRule rule = ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).get(keyedEvent.getId());
 
@@ -68,7 +68,8 @@ public void processElement(Keyed<Event, String, String> keyedEvent, ReadOnlyCont
                 } else {
                     eventTs = Long.parseLong(String.valueOf(rawTs));
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
         if (eventTs <= 0) {
             Object fallbackTs = keyedEvent.getWrapped().getFields().get("_event_timestamp_epoch_ms");
@@ -86,16 +87,15 @@ public void processElement(Keyed<Event, String, String> keyedEvent, ReadOnlyCont
     }
 
     @Override
-public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<AggregationResult> out)
+    public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<AggregationResult> out)
             throws Exception {
 
     }
 
     @Override
-public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {
+    public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {
         RuleSnapshot rule = ruleSnapshotState.value();
         if (rule == null) {
-
             return;
         }
 

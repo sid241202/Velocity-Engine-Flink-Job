@@ -121,10 +121,10 @@ public class AuthDemoPipeline {
                                 .uid("clickhouse-sink")
                                 .setParallelism(4);
 
-                results.getSideOutput(RuleEvaluatorFunction.ALERT_TAG)
-                                .print()
-                                .name("AlertLogger")
-                                .uid("alert-logger");
+                // results.getSideOutput(RuleEvaluatorFunction.ALERT_TAG)
+                // .print()
+                // .name("AlertLogger")
+                // .uid("alert-logger");
 
                 log.info("Executing Velocity Engine Auth Demo");
                 env.execute("UIDAI Velocity Engine Auth Demo");

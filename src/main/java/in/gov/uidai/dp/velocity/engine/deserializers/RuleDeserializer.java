@@ -40,8 +40,9 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Velocit
                 return;
             }
             if (rule.getExecutionRouting() == null
-                    || rule.getExecutionRouting().getTargetSourceTopic() == null) {
-                log.warn("Rule '{}' missing execution_routing.target_source_topic — dropping",
+                    || rule.getSourceCluster() == null
+                    || rule.getSourceTopic() == null) {
+                log.warn("Rule '{}' missing execution routing or source topic/cluster — dropping",
                         rule.getRuleId());
                 return;
             }
@@ -62,9 +63,9 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Velocit
                 }
             }
 
-            log.info("Parsed rule: id={} name={} status={} topic={}",
-                    rule.getRuleId(), rule.getRuleName(),
-                    rule.getStatus(), rule.getTargetSourceTopic());
+            log.info("Successfully deserialized Rule {} (Status: {}, Target: {})", 
+                    rule.getRuleId(), 
+                    rule.getStatus(), rule.getSourceTopic());
 
             out.collect(rule);
 

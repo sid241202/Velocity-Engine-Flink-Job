@@ -44,6 +44,6 @@ private HavingThresholds havingThresholds;
     public boolean isPaused()  { return "PAUSED".equalsIgnoreCase(getStatus()); }
     public boolean isDeleted() { return "DELETED".equalsIgnoreCase(getStatus()); }
 
-    public String getTargetSourceTopic() { return executionRouting != null ? executionRouting.getTargetSourceTopic() : null; }
-    public String getTargetCluster()     { return executionRouting != null ? executionRouting.getTargetCluster()     : null; }
+    public String getSourceTopic() { return executionRouting != null ? executionRouting.getSourceTopic() : null; }
+    public String getSourceCluster()     { return executionRouting != null ? executionRouting.getSourceCluster()     : null; }
 }

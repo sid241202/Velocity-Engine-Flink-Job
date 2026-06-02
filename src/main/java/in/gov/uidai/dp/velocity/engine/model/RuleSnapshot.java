@@ -30,7 +30,7 @@ public class RuleSnapshot implements Serializable {
                 rule.getRuleName(),
                 rule.getSeverityLevel(),
                 rule.getPenaltyTtlSeconds(),
-                rule.getTargetSourceTopic(),
+                rule.getSourceTopic(),
                 cluster,
                 rule.getWindowing(),
                 rule.getAggregations(),

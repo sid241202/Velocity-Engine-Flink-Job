@@ -48,8 +48,8 @@ public void processElement(Event event, ReadOnlyContext ctx, Collector<Keyed<Eve
             VelocityRule rule = entry.getValue();
 
             if (!rule.isActive()) continue;
-            if (!cluster.equalsIgnoreCase(rule.getTargetCluster())) continue;
-            if (!eventSourceTopic.equalsIgnoreCase(rule.getTargetSourceTopic())) continue;
+            if (!cluster.equalsIgnoreCase(rule.getSourceCluster())) continue;
+            if (!eventSourceTopic.equalsIgnoreCase(rule.getSourceTopic())) continue;
 
             if (FilterEvaluator.evaluate(event, rule.getFilters())) {
 

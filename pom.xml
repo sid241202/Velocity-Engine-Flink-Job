@@ -22,6 +22,7 @@
         <jackson.version>2.17.0</jackson.version>
         <lombok.version>1.18.36</lombok.version>
         <log4j.version>2.25.4</log4j.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <repositories>
@@ -112,8 +113,6 @@
             <scope>provided</scope>
         </dependency>
 
-
-
         <!-- ═══════════════════ RocksDB state backend (provided) ═══════════════════ -->
         <dependency>
             <groupId>org.apache.flink</groupId>
@@ -162,8 +161,6 @@
             <version>${jackson.version}</version>
         </dependency>
 
-
-
         <!-- ═══════════════════ HyperLogLog (high-cardinality COUNT_DISTINCT) ═══════════════════ -->
         <dependency>
             <groupId>com.clearspring.analytics</groupId>
@@ -178,6 +175,15 @@
             <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
+
+        <!-- ═══════════════════ JEXL Engine (Added manually for Thresholds) ═══════════════════ -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-jexl3</artifactId>
+            <version>3.3</version>
+        </dependency>
+
+
 
         <!-- ═══════════════════ Test ═══════════════════ -->
         <dependency>
@@ -226,6 +232,7 @@
                 <version>3.5.2</version>
                 <configuration>
                     <useModulePath>false</useModulePath>
+                    <argLine>--add-opens java.base/java.lang=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
 

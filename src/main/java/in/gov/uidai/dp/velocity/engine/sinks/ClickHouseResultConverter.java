@@ -14,8 +14,9 @@ public class ClickHouseResultConverter {
         try {
             return MAPPER.writeValueAsString(result);
         } catch (JsonProcessingException e) {
-
-            return "{}";
+            org.slf4j.LoggerFactory.getLogger(ClickHouseResultConverter.class)
+                .error("Failed to serialize AggregationResult to JSON: {}", e.getMessage());
+            return null;
         }
     }
 }

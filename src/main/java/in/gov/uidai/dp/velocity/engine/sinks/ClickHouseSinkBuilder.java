@@ -81,7 +81,7 @@ public void write(AggregationResult value, Context context) {
         }
 
         @Override
-public void flush(boolean endOfInput) {
+        public void flush(boolean endOfInput) {
             if (buffer.isEmpty()) return;
 
             List<AggregationResult> toFlush = new ArrayList<>(buffer);
@@ -89,11 +89,17 @@ public void flush(boolean endOfInput) {
 
             StringBuilder payload = new StringBuilder();
             for (AggregationResult r : toFlush) {
-                payload.append(ClickHouseResultConverter.toJsonEachRow(r)).append("\n");
+                String json = ClickHouseResultConverter.toJsonEachRow(r);
+                if (json != null) {
+                    payload.append(json).append("\n");
+                }
             }
 
-            String url = String.format("%s/?database=%s&query=INSERT INTO %s FORMAT JSONEachRow",
-                    hostUrl, database, table);
+            if (payload.length() == 0) return;
+
+            String query = "INSERT INTO " + table + " FORMAT JSONEachRow";
+            String encodedQuery = java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
+            String url = String.format("%s/?database=%s&query=%s", hostUrl, database, encodedQuery);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -104,15 +110,36 @@ public void flush(boolean endOfInput) {
                     .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                     .build();
 
-            try {
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() != 200) {
-                    log.error("ClickHouse insert failed ({}): {}", response.statusCode(), response.body());
-                    throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode());
+            int maxRetries = 3;
+            long backoffMs = 1000;
+            
+            for (int i = 0; i <= maxRetries; i++) {
+                try {
+                    HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                    if (response.statusCode() != 200) {
+                        if (i == maxRetries || response.statusCode() == 400) {
+                            log.error("ClickHouse insert failed unrecoverably ({}): {}", response.statusCode(), response.body());
+                            throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode());
+                        }
+                        log.warn("ClickHouse insert failed ({}). Retrying {}/{}...", response.statusCode(), i + 1, maxRetries);
+                    } else {
+                        return; // Success
+                    }
+                } catch (Exception ex) {
+                    if (i == maxRetries) {
+                        log.error("ClickHouse request failed after max retries", ex);
+                        throw new RuntimeException("Failed to write batch to ClickHouse", ex);
+                    }
+                    log.warn("ClickHouse request failed with exception. Retrying {}/{}...", i + 1, maxRetries, ex);
                 }
-            } catch (Exception ex) {
-                log.error("ClickHouse request failed", ex);
-                throw new RuntimeException("Failed to write batch to ClickHouse", ex);
+                
+                try {
+                    Thread.sleep(backoffMs);
+                    backoffMs *= 2; // exponential backoff
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted during backoff", e);
+                }
             }
         }
 

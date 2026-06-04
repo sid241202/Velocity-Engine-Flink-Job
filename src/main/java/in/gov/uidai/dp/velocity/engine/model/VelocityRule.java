@@ -23,7 +23,7 @@ private RuleMetadata ruleMetadata;
     @JsonProperty("execution_routing")
 private ExecutionRouting executionRouting;
 
-    private List<FilterCondition> filters;
+    private FilterNode filters;
 
     private GroupingConfig grouping;
 
@@ -44,6 +44,6 @@ private HavingThresholds havingThresholds;
     public boolean isPaused()  { return "PAUSED".equalsIgnoreCase(getStatus()); }
     public boolean isDeleted() { return "DELETED".equalsIgnoreCase(getStatus()); }
 
-    public String getSourceTopic() { return executionRouting != null ? executionRouting.getSourceTopic() : null; }
-    public String getSourceCluster()     { return executionRouting != null ? executionRouting.getSourceCluster()     : null; }
+    public String getSourceTopic() { return executionRouting != null ? executionRouting.getTargetSourceTopic() : null; }
+    public String getSourceCluster()     { return executionRouting != null ? executionRouting.getTargetCluster()     : null; }
 }

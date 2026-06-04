@@ -65,13 +65,15 @@ public class ClickHouseDdlInitializer {
 
     private static void executeDdl(HttpClient client, String hostUrl, ClickHouseSinkConfig config, String query) {
         try {
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(hostUrl + "/"))
                     .timeout(Duration.ofSeconds(30))
                     .header("X-ClickHouse-User", config.getUser())
-                    .header("X-ClickHouse-Key", config.getPassword())
-                    .POST(HttpRequest.BodyPublishers.ofString(query))
-                    .build();
+                    .POST(HttpRequest.BodyPublishers.ofString(query));
+            if (config.getPassword() != null && !config.getPassword().isEmpty()) {
+                requestBuilder.header("X-ClickHouse-Key", config.getPassword());
+            }
+            HttpRequest request = requestBuilder.build();
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {

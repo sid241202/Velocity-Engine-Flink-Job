@@ -36,6 +36,12 @@ private long slideMs;
     @JsonProperty("allowed_lateness_ms")
 private long allowedLatenessMs = 0L;
 
+    @JsonProperty("alignment_offset_ms")
+    private long alignmentOffsetMs = 0L;
+
+    @JsonProperty("use_kafka_timestamp")
+    private boolean useKafkaTimestamp = false;
+
     public boolean isEventTime() {
         return "EVENT_TIME".equalsIgnoreCase(timeType);
     }

@@ -48,6 +48,7 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Event> 
             event.put("_cluster", cluster);
             event.put("_kafka_partition", record.partition());
             event.put("_kafka_offset", record.offset());
+            event.put("_kafka_timestamp", record.timestamp());
 
             long epochMs = extractEpochMs(event, record.timestamp());
             event.put("_event_timestamp_epoch_ms", epochMs);

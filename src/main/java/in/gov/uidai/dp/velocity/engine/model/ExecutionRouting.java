@@ -16,9 +16,9 @@ public class ExecutionRouting implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    @JsonProperty("source_cluster")
-    private String sourceCluster;
+    @JsonProperty("target_cluster")
+    private String targetCluster;
 
-    @JsonProperty("source_topic")
-    private String sourceTopic;
+    @JsonProperty("target_source_topic")
+    private String targetSourceTopic;
 }

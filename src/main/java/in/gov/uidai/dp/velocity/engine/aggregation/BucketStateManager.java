@@ -35,7 +35,7 @@ public class BucketStateManager {
     }
 
     public void addEvent(VelocityRule rule, Event event, long eventTs) throws Exception {
-        long bucketTs = TimeUtils.floorToSlide(eventTs, rule.getWindowing().getEffectiveSlideMs());
+        long bucketTs = TimeUtils.floorToSlide(eventTs, rule.getWindowing().getEffectiveSlideMs(), rule.getWindowing().getAlignmentOffsetMs());
 
         String rawBucketKey = TimeUtils.bucketKey("_raw_events_", bucketTs);
         rawEventCountAcc.add(rawBucketKey);

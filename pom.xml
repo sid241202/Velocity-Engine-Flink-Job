@@ -13,6 +13,7 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <target.java.version>17</target.java.version>
         <flink.version>2.2.0</flink.version>
         <flink.kafka.connector.version>4.0.1-2.0</flink.kafka.connector.version>
@@ -22,7 +23,6 @@
         <jackson.version>2.17.0</jackson.version>
         <lombok.version>1.18.36</lombok.version>
         <log4j.version>2.25.4</log4j.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <repositories>
@@ -99,7 +99,7 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- ═══════════════════ Kafka Connector (provided) ═══════════════════ -->
+        <!-- ═══════════════════ Kafka Connector ═══════════════════ -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-kafka</artifactId>
@@ -112,6 +112,8 @@
             <version>${kafka.version}</version>
             <scope>provided</scope>
         </dependency>
+
+
 
         <!-- ═══════════════════ RocksDB state backend (provided) ═══════════════════ -->
         <dependency>
@@ -161,6 +163,8 @@
             <version>${jackson.version}</version>
         </dependency>
 
+
+
         <!-- ═══════════════════ HyperLogLog (high-cardinality COUNT_DISTINCT) ═══════════════════ -->
         <dependency>
             <groupId>com.clearspring.analytics</groupId>
@@ -176,14 +180,27 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- ═══════════════════ JEXL Engine (Added manually for Thresholds) ═══════════════════ -->
+        <!-- ═══════════════════ Database & Cache ═══════════════════ -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>5.1.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-jdbc</artifactId>
+            <version>3.2.0-1.19</version>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.3</version>
+        </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-jexl3</artifactId>
             <version>3.3</version>
         </dependency>
-
-
 
         <!-- ═══════════════════ Test ═══════════════════ -->
         <dependency>
@@ -216,13 +233,6 @@
                     <source>${maven.compiler.source}</source>
                     <target>${maven.compiler.target}</target>
                     <release>${target.java.version}</release>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
 
@@ -232,7 +242,6 @@
                 <version>3.5.2</version>
                 <configuration>
                     <useModulePath>false</useModulePath>
-                    <argLine>--add-opens java.base/java.lang=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
 

@@ -41,8 +41,12 @@ public final class TimeUtils {
         return IST_FMT.format(Instant.now());
     }
 
+    public static long floorToSlide(long epochMs, long slideMs, long offsetMs) {
+        return Math.floorDiv(epochMs - offsetMs, slideMs) * slideMs + offsetMs;
+    }
+
     public static long floorToSlide(long epochMs, long slideMs) {
-        return Math.floorDiv(epochMs, slideMs) * slideMs;
+        return floorToSlide(epochMs, slideMs, 0L);
     }
 
     public static String bucketKey(String alias, long bucketTs) {

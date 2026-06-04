@@ -60,30 +60,47 @@ public class RuleEvaluatorFunction
         }
 
         long eventTs = -1L;
-        Object rawTs = keyedEvent.getWrapped().getFields().get(rule.getWindowing().getEffectiveTimestampField());
-        if (rawTs != null) {
-            try {
-                if ("ISO_STRING".equalsIgnoreCase(rule.getWindowing().getTimestampFormat())) {
-                    eventTs = TimeUtils.isoStringToEpochMs(String.valueOf(rawTs));
-                } else {
-                    eventTs = Long.parseLong(String.valueOf(rawTs));
+        if (rule.getWindowing().isUseKafkaTimestamp()) {
+            Object kTs = keyedEvent.getWrapped().getFields().get("_kafka_timestamp");
+            if (kTs != null) {
+                eventTs = ((Number) kTs).longValue();
+            }
+        } else {
+            Object rawTs = keyedEvent.getWrapped().getFields().get(rule.getWindowing().getEffectiveTimestampField());
+            if (rawTs != null) {
+                try {
+                    if ("ISO_STRING".equalsIgnoreCase(rule.getWindowing().getTimestampFormat())) {
+                        eventTs = TimeUtils.isoStringToEpochMs(String.valueOf(rawTs));
+                    } else {
+                        eventTs = Long.parseLong(String.valueOf(rawTs));
+                    }
+                } catch (Exception ignored) {
                 }
-            } catch (Exception ignored) {
+            }
+            if (eventTs <= 0) {
+                Object fallbackTs = keyedEvent.getWrapped().getFields().get("_event_timestamp_epoch_ms");
+                if (fallbackTs != null) {
+                    eventTs = ((Number) fallbackTs).longValue();
+                }
             }
         }
         if (eventTs <= 0) {
-            Object fallbackTs = keyedEvent.getWrapped().getFields().get("_event_timestamp_epoch_ms");
-            if (fallbackTs != null) {
-                eventTs = (Long) fallbackTs;
-            }
+            eventTs = ctx.timestamp() != null ? ctx.timestamp() : System.currentTimeMillis();
         }
 
         bucketStateManager.addEvent(rule, keyedEvent.getWrapped(), eventTs);
 
-        long currentProcessingTime = ctx.timerService().currentProcessingTime();
         long slideMs = rule.getWindowing().getEffectiveSlideMs();
-        long nextTimer = TimeUtils.floorToSlide(currentProcessingTime, slideMs) + slideMs;
-        ctx.timerService().registerProcessingTimeTimer(nextTimer);
+        long offsetMs = rule.getWindowing().getAlignmentOffsetMs();
+        
+        if (rule.getWindowing().isEventTime()) {
+            long nextTimer = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
+            ctx.timerService().registerEventTimeTimer(nextTimer);
+        } else {
+            long currentProcessingTime = ctx.timerService().currentProcessingTime();
+            long nextTimer = TimeUtils.floorToSlide(currentProcessingTime, slideMs, offsetMs) + slideMs;
+            ctx.timerService().registerProcessingTimeTimer(nextTimer);
+        }
     }
 
     @Override
@@ -156,8 +173,13 @@ public class RuleEvaluatorFunction
             return;
         }
 
-        long nextTimer = timestamp + rule.getWindowing().getEffectiveSlideMs();
-        ctx.timerService().registerProcessingTimeTimer(nextTimer);
+        long offsetMs = rule.getWindowing().getAlignmentOffsetMs();
+        long nextTimer = TimeUtils.floorToSlide(timestamp, rule.getWindowing().getEffectiveSlideMs(), offsetMs) + rule.getWindowing().getEffectiveSlideMs();
+        if (rule.getWindowing().isEventTime()) {
+            ctx.timerService().registerEventTimeTimer(nextTimer);
+        } else {
+            ctx.timerService().registerProcessingTimeTimer(nextTimer);
+        }
     }
 
     private String getGroupKey(String compositeKey, String ruleId) {

@@ -59,4 +59,13 @@ private long allowedLatenessMs = 0L;
                 ? timestampField
                 : "_event_timestamp_epoch_ms";
     }
+
+    public long getEffectiveAlignmentOffsetMs() {
+        // 19,800,000 ms is exactly 5 hours and 30 minutes (IST offset from UTC)
+        long istOffsetMs = 19800000L;
+        long slide = getEffectiveSlideMs();
+        
+        long normalizedOffset = (alignmentOffsetMs - istOffsetMs) % slide;
+        return normalizedOffset < 0 ? normalizedOffset + slide : normalizedOffset;
+    }
 }

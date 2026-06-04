@@ -91,7 +91,7 @@ public class RuleEvaluatorFunction
         bucketStateManager.addEvent(rule, keyedEvent.getWrapped(), eventTs);
 
         long slideMs = rule.getWindowing().getEffectiveSlideMs();
-        long offsetMs = rule.getWindowing().getAlignmentOffsetMs();
+        long offsetMs = rule.getWindowing().getEffectiveAlignmentOffsetMs();
         
         if (rule.getWindowing().isEventTime()) {
             long nextTimer = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
@@ -173,7 +173,7 @@ public class RuleEvaluatorFunction
             return;
         }
 
-        long offsetMs = rule.getWindowing().getAlignmentOffsetMs();
+        long offsetMs = rule.getWindowing().getEffectiveAlignmentOffsetMs();
         long nextTimer = TimeUtils.floorToSlide(timestamp, rule.getWindowing().getEffectiveSlideMs(), offsetMs) + rule.getWindowing().getEffectiveSlideMs();
         if (rule.getWindowing().isEventTime()) {
             ctx.timerService().registerEventTimeTimer(nextTimer);

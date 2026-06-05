@@ -86,7 +86,8 @@ public class AuthDemoPipeline {
                                 .build();
 
                 DataStream<VelocityRule> kafkaRules = env
-                                .fromSource(rulesSource, WatermarkStrategy.noWatermarks(), "Kafka-Rules")
+                                .fromSource(rulesSource, WatermarkStrategy.<VelocityRule>forMonotonousTimestamps()
+                                        .withIdleness(Duration.ofMillis(AuthDemoConfig.IDLENESS_MS)), "Kafka-Rules")
                                 .uid("kafka-rules");
 
                 BroadcastStream<VelocityRule> broadcastRules = kafkaRules.broadcast(DynamicKeyFunction.RULE_STATE_DESC);

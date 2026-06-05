@@ -6,7 +6,7 @@ import java.util.Properties;
 public class AuthDemoConfig implements Serializable {
 
     // ── LOCAL KAFKA BROKER ─────────────────────
-    public static final String KAFKA_BOOTSTRAP_SERVERS = "localhost:9092";
+    public static final String KAFKA_BOOTSTRAP_SERVERS = "broker:29092";
 
     // Auth events topic
     public static final String AUTH_TOPIC = "BI.AUTH.AUTH_TXN.UNION.V1";
@@ -23,7 +23,7 @@ public class AuthDemoConfig implements Serializable {
     public static final String CHECKPOINT_STORAGE = "file:///tmp/flink-checkpoints/velocity-auth";
 
     // ── ClickHouse: HTTP interface (local single-node) ───────────────────
-    public static final String CLICKHOUSE_HOSTS    = "localhost:8123";
+    public static final String CLICKHOUSE_HOSTS    = "clickhouse:8123";
     public static final String CLICKHOUSE_USER     = "default";
     public static final String CLICKHOUSE_PASSWORD = "password";
     public static final String CLICKHOUSE_DATABASE = "auth_analytics";

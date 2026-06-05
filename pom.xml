@@ -104,13 +104,11 @@
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-kafka</artifactId>
             <version>${flink.kafka.connector.version}</version>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
             <version>${kafka.version}</version>
-            <scope>provided</scope>
         </dependency>
 
 
@@ -268,8 +266,6 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <artifactSet>
                                 <excludes>
-                                    <exclude>org.apache.flink:*</exclude>
-                                    <exclude>org.apache.kafka:*</exclude>
                                     <exclude>org.apache.logging.log4j:*</exclude>
                                     <exclude>org.slf4j:*</exclude>
                                 </excludes>

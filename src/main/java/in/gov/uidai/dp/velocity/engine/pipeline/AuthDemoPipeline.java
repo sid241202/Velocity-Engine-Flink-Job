@@ -80,7 +80,7 @@ public class AuthDemoPipeline {
                                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP_SERVERS)
                                 .setTopics(AuthDemoConfig.RULES_TOPIC)
                                 .setGroupId(AuthDemoConfig.RULES_CONSUMER_GROUP)
-                                .setStartingOffsets(OffsetsInitializer.earliest())
+                                .setStartingOffsets(OffsetsInitializer.committedOffsets(org.apache.kafka.clients.consumer.OffsetResetStrategy.LATEST))
                                 .setDeserializer(
                                                 new in.gov.uidai.dp.velocity.engine.deserializers.RuleDeserializer())
                                 .build();

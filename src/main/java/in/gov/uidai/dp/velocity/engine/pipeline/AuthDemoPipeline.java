@@ -80,7 +80,7 @@ public class AuthDemoPipeline {
                                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP_SERVERS)
                                 .setTopics(AuthDemoConfig.RULES_TOPIC)
                                 .setGroupId(AuthDemoConfig.RULES_CONSUMER_GROUP)
-                                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.EARLIEST))
+                                .setStartingOffsets(OffsetsInitializer.earliest())
                                 .setDeserializer(
                                                 new in.gov.uidai.dp.velocity.engine.deserializers.RuleDeserializer())
                                 .build();
@@ -115,7 +115,8 @@ public class AuthDemoPipeline {
                 chConfig.setTable(AuthDemoConfig.CLICKHOUSE_TABLE);
                 chConfig.setAutoCreateDdl(true);
                 chConfig.setUseDistributed(false);
-                chConfig.setMaxBufferSize(100);
+                chConfig.setMaxBufferSize(1);           // flush every record immediately for testing
+                chConfig.setFlushIntervalMs(1000L);     // 1-second safety net
 
                 results.sinkTo(ClickHouseSinkBuilder.build(chConfig))
                                 .name("ClickHouseSink")

@@ -17,6 +17,15 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * ClickHouse HTTP sink that flushes immediately on every write for low-latency,
+ * with batching support for high-throughput production use.
+ * 
+ * KEY DESIGN NOTE: Flink's Sink2 API does NOT call flush() on checkpoints.
+ * flush(endOfInput=true) is only called at end-of-stream (never in streaming mode).
+ * Therefore we flush on every write when buffer reaches batchSize OR when
+ * a time threshold is exceeded since the last flush.
+ */
 @Slf4j
 public class ClickHouseSinkBuilder {
 
@@ -39,7 +48,7 @@ public class ClickHouseSinkBuilder {
         }
 
         @Override
-public SinkWriter<AggregationResult> createWriter(WriterInitContext context) {
+        public SinkWriter<AggregationResult> createWriter(WriterInitContext context) {
             return new ClickHouseSinkWriter(config);
         }
     }
@@ -51,10 +60,12 @@ public SinkWriter<AggregationResult> createWriter(WriterInitContext context) {
         private final String database;
         private final String table;
         private final int batchSize;
+        private final long flushIntervalMs;
 
         private final List<AggregationResult> buffer;
         private final HttpClient httpClient;
         private final ExecutorService executor;
+        private long lastFlushTime;
 
         public ClickHouseSinkWriter(ClickHouseSinkConfig config) {
             this.hostUrl = config.getFirstHostUrl();
@@ -63,29 +74,48 @@ public SinkWriter<AggregationResult> createWriter(WriterInitContext context) {
             this.database = config.getDatabase();
             this.table = config.getTable();
             this.batchSize = config.getMaxBufferSize();
+            this.flushIntervalMs = config.getFlushIntervalMs();
 
-            this.buffer = new ArrayList<>(batchSize);
+            this.buffer = new ArrayList<>(Math.min(batchSize, 100));
+            this.lastFlushTime = System.currentTimeMillis();
             this.executor = Executors.newFixedThreadPool(2);
             this.httpClient = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
                     .executor(executor)
                     .build();
+
+            log.info("ClickHouseSinkWriter initialized: host={}, db={}, table={}, batchSize={}, flushIntervalMs={}",
+                    hostUrl, database, table, batchSize, flushIntervalMs);
         }
 
         @Override
-public void write(AggregationResult value, Context context) {
+        public void write(AggregationResult value, Context context) {
             buffer.add(value);
-            if (buffer.size() >= batchSize) {
-                flush(false);
+            log.debug("Buffered AggregationResult for rule={}, groupKey={}, buffer size={}",
+                    value.getRuleId(), value.getGroupKey(), buffer.size());
+
+            // Flush if batch size reached OR time-based flush interval exceeded
+            long now = System.currentTimeMillis();
+            if (buffer.size() >= batchSize || (now - lastFlushTime) >= flushIntervalMs) {
+                doFlush();
             }
         }
 
         @Override
         public void flush(boolean endOfInput) {
+            // Called by Flink only at end of stream (endOfInput=true)
+            // or never in streaming mode. We handle flushing in write() instead.
+            if (!buffer.isEmpty()) {
+                doFlush();
+            }
+        }
+
+        private void doFlush() {
             if (buffer.isEmpty()) return;
 
             List<AggregationResult> toFlush = new ArrayList<>(buffer);
             buffer.clear();
+            lastFlushTime = System.currentTimeMillis();
 
             StringBuilder payload = new StringBuilder();
             for (AggregationResult r : toFlush) {
@@ -101,6 +131,8 @@ public void write(AggregationResult value, Context context) {
             String encodedQuery = java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
             String url = String.format("%s/?database=%s&query=%s", hostUrl, database, encodedQuery);
 
+            log.info("Flushing {} records to ClickHouse: {}.{}", toFlush.size(), database, table);
+
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(30))
@@ -112,19 +144,25 @@ public void write(AggregationResult value, Context context) {
 
             int maxRetries = 3;
             long backoffMs = 1000;
-            
+
             for (int i = 0; i <= maxRetries; i++) {
                 try {
                     HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                     if (response.statusCode() != 200) {
+                        log.error("ClickHouse insert failed ({}): body={}, payload_preview={}",
+                                response.statusCode(), response.body(),
+                                payload.substring(0, Math.min(500, payload.length())));
                         if (i == maxRetries || response.statusCode() == 400) {
-                            log.error("ClickHouse insert failed unrecoverably ({}): {}", response.statusCode(), response.body());
-                            throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode());
+                            throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode()
+                                    + " body: " + response.body());
                         }
-                        log.warn("ClickHouse insert failed ({}). Retrying {}/{}...", response.statusCode(), i + 1, maxRetries);
+                        log.warn("Retrying {}/{}...", i + 1, maxRetries);
                     } else {
-                        return; // Success
+                        log.info("Successfully wrote {} records to ClickHouse", toFlush.size());
+                        return;
                     }
+                } catch (RuntimeException re) {
+                    throw re; // Don't catch our own thrown RuntimeExceptions
                 } catch (Exception ex) {
                     if (i == maxRetries) {
                         log.error("ClickHouse request failed after max retries", ex);
@@ -132,10 +170,10 @@ public void write(AggregationResult value, Context context) {
                     }
                     log.warn("ClickHouse request failed with exception. Retrying {}/{}...", i + 1, maxRetries, ex);
                 }
-                
+
                 try {
                     Thread.sleep(backoffMs);
-                    backoffMs *= 2; // exponential backoff
+                    backoffMs *= 2;
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("Interrupted during backoff", e);
@@ -144,8 +182,8 @@ public void write(AggregationResult value, Context context) {
         }
 
         @Override
-public void close() {
-            flush(true);
+        public void close() {
+            doFlush();
             executor.shutdown();
         }
     }

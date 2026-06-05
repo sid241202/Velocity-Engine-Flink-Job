@@ -118,11 +118,31 @@ public class RuleEvaluatorFunction
         }
     }
 
+
     @Override
     public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<AggregationResult> out)
             throws Exception {
+        if (rule == null) return;
 
+        String ruleId = rule.getRuleId();
+        if (ruleId == null || ruleId.isBlank()) {
+            log.warn("Received rule with null/blank ruleId — skipping");
+            return;
+        }
+
+        if (rule.isDeleted()) {
+            log.info("Removing DELETED rule from broadcast state: id={}", ruleId);
+            ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).remove(ruleId);
+        } else {
+            // Store ACTIVE and PAUSED rules. processElement() checks isActive()
+            // so PAUSED rules will be skipped during evaluation but remain in state
+            // for instant resumption.
+            log.info("Updating rule in broadcast state: id={} status={}", ruleId, rule.getStatus());
+            ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).put(ruleId, rule);
+        }
     }
+
+
 
     @Override
     public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {

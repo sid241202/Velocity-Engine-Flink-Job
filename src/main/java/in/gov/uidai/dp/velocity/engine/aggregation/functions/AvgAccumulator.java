@@ -34,7 +34,7 @@ public class AvgAccumulator {
         }
     }
 
-    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
         double sum = 0.0;
         long count = 0L;
         Iterator<Map.Entry<String, Tuple2<Double, Long>>> iter = state.iterator();
@@ -43,7 +43,7 @@ public class AvgAccumulator {
             Map.Entry<String, Tuple2<Double, Long>> entry = iter.next();
             if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
                 long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
-                if (bucketTs < windowStartTs) {
+                if (bucketTs < windowStartTs - allowedLatenessMs) {
                     iter.remove();
                 } else if (bucketTs < windowEndTs) {
                     sum += entry.getValue().f0;
@@ -53,6 +53,25 @@ public class AvgAccumulator {
         }
         return count == 0 ? 0.0 : sum / count;
     }
+
+    public double computeNoPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+        double sum = 0.0;
+        long count = 0L;
+        Iterator<Map.Entry<String, Tuple2<Double, Long>>> iter = state.iterator();
+
+        while (iter.hasNext()) {
+            Map.Entry<String, Tuple2<Double, Long>> entry = iter.next();
+            if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
+                long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
+                if (bucketTs >= windowStartTs && bucketTs < windowEndTs) {
+                    sum += entry.getValue().f0;
+                    count += entry.getValue().f1;
+                }
+            }
+        }
+        return count == 0 ? 0.0 : sum / count;
+    }
+
     public boolean isEmpty() throws Exception {
         return state.isEmpty();
     }

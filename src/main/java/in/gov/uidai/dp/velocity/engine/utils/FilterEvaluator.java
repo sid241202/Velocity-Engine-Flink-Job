@@ -72,6 +72,10 @@ public final class FilterEvaluator {
                 case "LESS_THAN_EQUAL"    -> toDouble(eventVal) <= toDouble(condVal);
                 case "IN"                 -> evaluateIn(eventVal, condVal);
                 case "REGEX"              -> strOf(eventVal).matches(strOf(condVal));
+                case "CONTAINS"           -> strOf(eventVal).toLowerCase().contains(strOf(condVal).toLowerCase());
+                case "NOT_CONTAINS"       -> !strOf(eventVal).toLowerCase().contains(strOf(condVal).toLowerCase());
+                case "STARTS_WITH"        -> strOf(eventVal).toLowerCase().startsWith(strOf(condVal).toLowerCase());
+                case "ENDS_WITH"          -> strOf(eventVal).toLowerCase().endsWith(strOf(condVal).toLowerCase());
                 default -> {
                     log.warn("Unknown filter operator '{}' — treating as pass", operator);
                     yield true;

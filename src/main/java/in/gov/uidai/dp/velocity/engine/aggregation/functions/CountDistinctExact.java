@@ -6,6 +6,7 @@ import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.typeinfo.Types;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
@@ -16,7 +17,6 @@ public class CountDistinctExact {
     private final MapState<String, String> state;
 
     public CountDistinctExact(RuntimeContext ctx) {
-
         MapStateDescriptor<String, String> desc = new MapStateDescriptor<>("distinct_exact_acc", Types.STRING, Types.STRING);
         this.state = ctx.getMapState(desc);
     }
@@ -25,19 +25,16 @@ public class CountDistinctExact {
         String current = state.get(bucketKey);
         if (current == null) {
             state.put(bucketKey, value);
-        } else {
-
-            if (!current.equals(value) && !current.contains(value + ",") && !current.contains("," + value) && !current.endsWith("," + value)) {
-
-                Set<String> set = new HashSet<>(java.util.Arrays.asList(current.split(",")));
-                if (set.add(value)) {
-                    state.put(bucketKey, current + "," + value);
-                }
-            }
+            return;
+        }
+        // Use a Set to avoid substring matching bugs and dedup correctly
+        Set<String> set = new HashSet<>(Arrays.asList(current.split(",", -1)));
+        if (set.add(value)) {
+            state.put(bucketKey, String.join(",", set));
         }
     }
 
-    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
         Set<String> globalSet = new HashSet<>();
         Iterator<Map.Entry<String, String>> iter = state.iterator();
 
@@ -45,10 +42,10 @@ public class CountDistinctExact {
             Map.Entry<String, String> entry = iter.next();
             if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
                 long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
-                if (bucketTs < windowStartTs) {
+                if (bucketTs < windowStartTs - allowedLatenessMs) {
                     iter.remove();
                 } else if (bucketTs < windowEndTs) {
-                    String[] values = entry.getValue().split(",");
+                    String[] values = entry.getValue().split(",", -1);
                     for (String val : values) {
                         if (!val.isEmpty()) globalSet.add(val);
                     }
@@ -57,6 +54,26 @@ public class CountDistinctExact {
         }
         return globalSet.size();
     }
+
+    public double computeNoPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+        Set<String> globalSet = new HashSet<>();
+        Iterator<Map.Entry<String, String>> iter = state.iterator();
+
+        while (iter.hasNext()) {
+            Map.Entry<String, String> entry = iter.next();
+            if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
+                long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
+                if (bucketTs >= windowStartTs && bucketTs < windowEndTs) {
+                    String[] values = entry.getValue().split(",", -1);
+                    for (String val : values) {
+                        if (!val.isEmpty()) globalSet.add(val);
+                    }
+                }
+            }
+        }
+        return globalSet.size();
+    }
+
     public boolean isEmpty() throws Exception {
         return state.isEmpty();
     }

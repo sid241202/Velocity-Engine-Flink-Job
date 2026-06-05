@@ -9,7 +9,8 @@ public final class KeysExtractor {
     private KeysExtractor() {}
 
     public static String getKey(List<String> fieldPaths, Event event) {
-        if (fieldPaths == null || fieldPaths.isEmpty()) return "ALL";
+        if (fieldPaths == null || fieldPaths.isEmpty()) return "__GLOBAL__";
+        if (fieldPaths.size() == 1 && "__GLOBAL__".equals(fieldPaths.get(0))) return "__GLOBAL__";
 
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < fieldPaths.size(); i++) {

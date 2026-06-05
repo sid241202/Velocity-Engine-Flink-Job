@@ -71,7 +71,7 @@ public class BucketStateManager {
         }
     }
 
-    public Map<String, Double> computeWindowAndPrune(VelocityRule rule, long windowStartTs, long windowEndTs) throws Exception {
+    public Map<String, Double> computeWindowAndPrune(VelocityRule rule, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
         Map<String, Double> results = new HashMap<>();
 
         for (AggregationSpec spec : rule.getAggregations()) {
@@ -79,26 +79,59 @@ public class BucketStateManager {
             String alias = spec.getAlias();
 
             if (spec.isCount()) {
-                finalVal = countAcc.computeAndPrune(alias, windowStartTs, windowEndTs);
+                finalVal = countAcc.computeAndPrune(alias, windowStartTs, windowEndTs, allowedLatenessMs);
             } else if (spec.isSum()) {
-                finalVal = sumAcc.computeAndPrune(alias, windowStartTs, windowEndTs);
+                finalVal = sumAcc.computeAndPrune(alias, windowStartTs, windowEndTs, allowedLatenessMs);
             } else if (spec.isAvg()) {
-                finalVal = avgAcc.computeAndPrune(alias, windowStartTs, windowEndTs);
+                finalVal = avgAcc.computeAndPrune(alias, windowStartTs, windowEndTs, allowedLatenessMs);
             } else if (spec.isMin()) {
-                finalVal = minAcc.computeAndPrune(alias, windowStartTs, windowEndTs);
+                finalVal = minAcc.computeAndPrune(alias, windowStartTs, windowEndTs, allowedLatenessMs);
             } else if (spec.isMax()) {
-                finalVal = maxAcc.computeAndPrune(alias, windowStartTs, windowEndTs);
+                finalVal = maxAcc.computeAndPrune(alias, windowStartTs, windowEndTs, allowedLatenessMs);
             } else if (spec.isCountDistinct()) {
                 if (spec.isHighCardinality()) {
-                    finalVal = distinctHllAcc.computeAndPrune(alias, windowStartTs, windowEndTs);
+                    finalVal = distinctHllAcc.computeAndPrune(alias, windowStartTs, windowEndTs, allowedLatenessMs);
                 } else {
-                    finalVal = distinctExactAcc.computeAndPrune(alias, windowStartTs, windowEndTs);
+                    finalVal = distinctExactAcc.computeAndPrune(alias, windowStartTs, windowEndTs, allowedLatenessMs);
                 }
             }
             results.put(alias, finalVal);
         }
 
-        double rawCount = rawEventCountAcc.computeAndPrune("_raw_events_", windowStartTs, windowEndTs);
+        double rawCount = rawEventCountAcc.computeAndPrune("_raw_events_", windowStartTs, windowEndTs, allowedLatenessMs);
+        results.put("_raw_events_", rawCount);
+
+        return results;
+    }
+
+    public Map<String, Double> computeWindowNoPrune(VelocityRule rule, long windowStartTs, long windowEndTs) throws Exception {
+        Map<String, Double> results = new HashMap<>();
+
+        for (AggregationSpec spec : rule.getAggregations()) {
+            double finalVal = 0.0;
+            String alias = spec.getAlias();
+
+            if (spec.isCount()) {
+                finalVal = countAcc.computeNoPrune(alias, windowStartTs, windowEndTs);
+            } else if (spec.isSum()) {
+                finalVal = sumAcc.computeNoPrune(alias, windowStartTs, windowEndTs);
+            } else if (spec.isAvg()) {
+                finalVal = avgAcc.computeNoPrune(alias, windowStartTs, windowEndTs);
+            } else if (spec.isMin()) {
+                finalVal = minAcc.computeNoPrune(alias, windowStartTs, windowEndTs);
+            } else if (spec.isMax()) {
+                finalVal = maxAcc.computeNoPrune(alias, windowStartTs, windowEndTs);
+            } else if (spec.isCountDistinct()) {
+                if (spec.isHighCardinality()) {
+                    finalVal = distinctHllAcc.computeNoPrune(alias, windowStartTs, windowEndTs);
+                } else {
+                    finalVal = distinctExactAcc.computeNoPrune(alias, windowStartTs, windowEndTs);
+                }
+            }
+            results.put(alias, finalVal);
+        }
+
+        double rawCount = rawEventCountAcc.computeNoPrune("_raw_events_", windowStartTs, windowEndTs);
         results.put("_raw_events_", rawCount);
 
         return results;

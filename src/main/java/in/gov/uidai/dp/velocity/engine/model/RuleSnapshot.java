@@ -23,6 +23,7 @@ public class RuleSnapshot implements Serializable {
     private WindowingConfig     windowing;
     private List<AggregationSpec> aggregations;
     private HavingThresholds    havingThresholds;
+    private long allowedLatenessMs;
 
     public static RuleSnapshot fromRule(VelocityRule rule, String cluster) {
         return new RuleSnapshot(
@@ -34,7 +35,8 @@ public class RuleSnapshot implements Serializable {
                 cluster,
                 rule.getWindowing(),
                 rule.getAggregations(),
-                rule.getHavingThresholds()
+                rule.getHavingThresholds(),
+                rule.getWindowing() != null ? rule.getWindowing().getAllowedLatenessMs() : 0L
         );
     }
 }

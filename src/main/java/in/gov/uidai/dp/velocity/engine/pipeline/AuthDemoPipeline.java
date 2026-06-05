@@ -40,7 +40,7 @@ public class AuthDemoPipeline {
                 conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_STORAGE);
                 StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
 
-                env.setParallelism(16);
+                env.setParallelism(2);
 
                 env.enableCheckpointing(AuthDemoConfig.CHECKPOINT_INTERVAL_MS, CheckpointingMode.EXACTLY_ONCE);
                 env.getCheckpointConfig().setCheckpointTimeout(AuthDemoConfig.CHECKPOINT_TIMEOUT_MS);
@@ -53,13 +53,13 @@ public class AuthDemoPipeline {
                                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP_SERVERS)
                                 .setTopics(AuthDemoConfig.AUTH_TOPIC)
                                 .setGroupId(AuthDemoConfig.CONSUMER_GROUP)
-                                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST))
+                                .setStartingOffsets(OffsetsInitializer.earliest())
                                 .setDeserializer(new EventDeserializer(AuthDemoConfig.AUTH_TOPIC, "auth-cluster",
                                                 "_event_timestamp", "ISO_STRING"))
                                 .build();
 
                 WatermarkStrategy<Event> watermarkStrategy = WatermarkStrategy
-                                .<Event>forBoundedOutOfOrderness(Duration.ZERO)
+                                .<Event>forBoundedOutOfOrderness(Duration.ofMillis(AuthDemoConfig.SOURCE_MAX_LATENESS_MS))
                                 .withIdleness(Duration.ofMillis(AuthDemoConfig.IDLENESS_MS));
 
                 DataStream<Event> eventsStream = env.fromSource(kafkaSource, watermarkStrategy, "Kafka-Auth-Events")
@@ -113,18 +113,14 @@ public class AuthDemoPipeline {
                 chConfig.setPassword(AuthDemoConfig.CLICKHOUSE_PASSWORD);
                 chConfig.setDatabase(AuthDemoConfig.CLICKHOUSE_DATABASE);
                 chConfig.setTable(AuthDemoConfig.CLICKHOUSE_TABLE);
-                chConfig.setAutoCreateDdl(false);// TODO
-                chConfig.setMaxBufferSize(5000);
+                chConfig.setAutoCreateDdl(true);
+                chConfig.setUseDistributed(false);
+                chConfig.setMaxBufferSize(100);
 
                 results.sinkTo(ClickHouseSinkBuilder.build(chConfig))
                                 .name("ClickHouseSink")
                                 .uid("clickhouse-sink")
-                                .setParallelism(4);
-
-                // results.getSideOutput(RuleEvaluatorFunction.ALERT_TAG)
-                // .print()
-                // .name("AlertLogger")
-                // .uid("alert-logger");
+                                .setParallelism(2);
 
                 log.info("Executing Velocity Engine Auth Demo");
                 env.execute("UIDAI Velocity Engine Auth Demo");

@@ -25,7 +25,7 @@ public class MinAccumulator {
         }
     }
 
-    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
         double min = Double.MAX_VALUE;
         boolean found = false;
         Iterator<Map.Entry<String, Double>> iter = state.iterator();
@@ -34,9 +34,27 @@ public class MinAccumulator {
             Map.Entry<String, Double> entry = iter.next();
             if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
                 long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
-                if (bucketTs < windowStartTs) {
+                if (bucketTs < windowStartTs - allowedLatenessMs) {
                     iter.remove();
                 } else if (bucketTs < windowEndTs) {
+                    found = true;
+                    if (entry.getValue() < min) min = entry.getValue();
+                }
+            }
+        }
+        return found ? min : 0.0;
+    }
+
+    public double computeNoPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+        double min = Double.MAX_VALUE;
+        boolean found = false;
+        Iterator<Map.Entry<String, Double>> iter = state.iterator();
+
+        while (iter.hasNext()) {
+            Map.Entry<String, Double> entry = iter.next();
+            if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
+                long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
+                if (bucketTs >= windowStartTs && bucketTs < windowEndTs) {
                     found = true;
                     if (entry.getValue() < min) min = entry.getValue();
                 }

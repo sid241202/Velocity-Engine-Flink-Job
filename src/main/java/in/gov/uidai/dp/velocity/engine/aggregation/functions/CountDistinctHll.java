@@ -34,7 +34,7 @@ public class CountDistinctHll {
         state.put(bucketKey, hll.getBytes());
     }
 
-    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
         HyperLogLog globalHll = new HyperLogLog(14);
         Iterator<Map.Entry<String, byte[]>> iter = state.iterator();
 
@@ -42,7 +42,7 @@ public class CountDistinctHll {
             Map.Entry<String, byte[]> entry = iter.next();
             if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
                 long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
-                if (bucketTs < windowStartTs) {
+                if (bucketTs < windowStartTs - allowedLatenessMs) {
                     iter.remove();
                 } else if (bucketTs < windowEndTs) {
                     HyperLogLog hll = HyperLogLog.Builder.build(entry.getValue());
@@ -52,6 +52,24 @@ public class CountDistinctHll {
         }
         return globalHll.cardinality();
     }
+
+    public double computeNoPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+        HyperLogLog globalHll = new HyperLogLog(14);
+        Iterator<Map.Entry<String, byte[]>> iter = state.iterator();
+
+        while (iter.hasNext()) {
+            Map.Entry<String, byte[]> entry = iter.next();
+            if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
+                long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
+                if (bucketTs >= windowStartTs && bucketTs < windowEndTs) {
+                    HyperLogLog hll = HyperLogLog.Builder.build(entry.getValue());
+                    globalHll.addAll(hll);
+                }
+            }
+        }
+        return globalHll.cardinality();
+    }
+
     public boolean isEmpty() throws Exception {
         return state.isEmpty();
     }

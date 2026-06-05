@@ -26,8 +26,8 @@ public class ClickHouseDdlInitializer {
 
         String localTable = config.isUseDistributed() ? config.getTable() + "_local" : config.getTable();
         String engine = config.isUseDistributed()
-                ? String.format("ReplicatedMergeTree('%s/{shard}', '{replica}')", config.getZookeeperPath())
-                : "MergeTree()";
+                ? String.format("ReplicatedReplacingMergeTree('%s/{shard}', '{replica}', evaluatedAt)", config.getZookeeperPath())
+                : "ReplacingMergeTree(evaluatedAt)";
 
         String createLocalTable = String.format("""
             CREATE TABLE IF NOT EXISTS %s.%s %s (
@@ -36,15 +36,15 @@ public class ClickHouseDdlInitializer {
                 sourceTopic String,
                 cluster String,
                 groupKey String,
-                windowStart String,
-                windowEnd String,
+                windowStart DateTime64(3, 'Asia/Kolkata'),
+                windowEnd DateTime64(3, 'Asia/Kolkata'),
                 windowType String,
                 timeType String,
-                aggregationResults Map(String, Float64),
+                aggregationResults String,
                 thresholdBreached UInt8,
                 severityLevel String,
                 eventCount UInt64,
-                evaluatedAt String
+                evaluatedAt DateTime64(3, 'Asia/Kolkata')
             ) ENGINE = %s
             ORDER BY (ruleId, windowStart, groupKey)
             """, config.getDatabase(), localTable, clusterClause, engine);

@@ -55,8 +55,9 @@ public class RuleEvaluatorFunction
         }
 
         RuleSnapshot snapshot = ruleSnapshotState.value();
-        if (snapshot == null || !snapshot.getRuleName().equals(rule.getRuleName())) {
-            ruleSnapshotState.update(RuleSnapshot.fromRule(rule, cluster));
+        RuleSnapshot newSnapshot = RuleSnapshot.fromRule(rule, cluster);
+        if (snapshot == null || !snapshot.equals(newSnapshot)) {
+            ruleSnapshotState.update(newSnapshot);
         }
 
         long eventTs = -1L;
@@ -92,10 +93,24 @@ public class RuleEvaluatorFunction
 
         long slideMs = rule.getWindowing().getEffectiveSlideMs();
         long offsetMs = rule.getWindowing().getEffectiveAlignmentOffsetMs();
-        
+        long sizeMs = rule.getWindowing().getSizeMs();
+        long allowedLatenessMs = rule.getWindowing().getAllowedLatenessMs();
+
         if (rule.getWindowing().isEventTime()) {
             long nextTimer = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
             ctx.timerService().registerEventTimeTimer(nextTimer);
+
+            // Late event detection (Option A: On-Demand)
+            // If this event belongs to a window that has already closed, emit an updated result NOW
+            Long currentWatermark = ctx.timerService().currentWatermark();
+            if (currentWatermark != null && currentWatermark != Long.MIN_VALUE) {
+                long eventWindowEnd = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
+                if (eventWindowEnd <= currentWatermark && eventWindowEnd + allowedLatenessMs > currentWatermark) {
+                    // This event is late but within the allowed lateness — emit updated result immediately
+                    long lateWindowStart = eventWindowEnd - sizeMs;
+                    emitResult(rule, lateWindowStart, eventWindowEnd, allowedLatenessMs, ctx, out);
+                }
+            }
         } else {
             long currentProcessingTime = ctx.timerService().currentProcessingTime();
             long nextTimer = TimeUtils.floorToSlide(currentProcessingTime, slideMs, offsetMs) + slideMs;
@@ -118,15 +133,22 @@ public class RuleEvaluatorFunction
 
         long windowEndTs = timestamp;
         long windowStartTs = windowEndTs - rule.getWindowing().getSizeMs();
+        long allowedLatenessMs = rule.getAllowedLatenessMs();
 
         VelocityRule mockRule = new VelocityRule();
         mockRule.setAggregations(rule.getAggregations());
 
-        Map<String, Double> results = bucketStateManager.computeWindowAndPrune(mockRule, windowStartTs, windowEndTs);
+        Map<String, Double> results = bucketStateManager.computeWindowAndPrune(mockRule, windowStartTs, windowEndTs, allowedLatenessMs);
 
         long windowEventCount = 0L;
         if (results.containsKey("_raw_events_")) {
             windowEventCount = results.remove("_raw_events_").longValue();
+        }
+
+        // Skip emitting if window has zero events (can happen when only old buckets were pruned)
+        if (windowEventCount == 0 && results.values().stream().allMatch(v -> v == 0.0)) {
+            reRegisterTimerIfNeeded(rule, timestamp, ctx);
+            return;
         }
 
         boolean breached = HavingEvaluator.evaluate(rule.getHavingThresholds(), results);
@@ -167,18 +189,83 @@ public class RuleEvaluatorFunction
             ctx.output(ALERT_TAG, alert);
         }
 
+        reRegisterTimerIfNeeded(rule, timestamp, ctx);
+    }
+
+    /**
+     * Re-registers the next slide timer if there is still state, otherwise clears the snapshot.
+     */
+    private void reRegisterTimerIfNeeded(RuleSnapshot rule, long timestamp, OnTimerContext ctx) throws Exception {
         if (bucketStateManager.isEmpty()) {
             ruleSnapshotState.clear();
             log.debug("State is empty for key {}, clearing snapshot and stopping timers.", ctx.getCurrentKey());
             return;
         }
 
+        long slideMs = rule.getWindowing().getEffectiveSlideMs();
         long offsetMs = rule.getWindowing().getEffectiveAlignmentOffsetMs();
-        long nextTimer = TimeUtils.floorToSlide(timestamp, rule.getWindowing().getEffectiveSlideMs(), offsetMs) + rule.getWindowing().getEffectiveSlideMs();
+        long nextTimer = TimeUtils.floorToSlide(timestamp, slideMs, offsetMs) + slideMs;
         if (rule.getWindowing().isEventTime()) {
             ctx.timerService().registerEventTimeTimer(nextTimer);
         } else {
             ctx.timerService().registerProcessingTimeTimer(nextTimer);
+        }
+    }
+
+    /**
+     * Emits an updated AggregationResult for a late event without pruning state.
+     * Used for on-demand re-evaluation when a late event arrives for an already-closed window.
+     */
+    private void emitResult(VelocityRule rule, long windowStartTs, long windowEndTs, long allowedLatenessMs,
+                            ReadOnlyContext ctx, Collector<AggregationResult> out) throws Exception {
+        VelocityRule mockRule = new VelocityRule();
+        mockRule.setAggregations(rule.getAggregations());
+
+        // Use computeWindowNoPrune — do NOT evict state for late re-evaluations
+        Map<String, Double> results = bucketStateManager.computeWindowNoPrune(mockRule, windowStartTs, windowEndTs);
+
+        long windowEventCount = 0L;
+        if (results.containsKey("_raw_events_")) {
+            windowEventCount = results.remove("_raw_events_").longValue();
+        }
+        if (windowEventCount == 0) return;
+
+        boolean breached = HavingEvaluator.evaluate(rule.getHavingThresholds(), results);
+
+        String ruleId = rule.getRuleId();
+        String groupKey = getGroupKey(ctx.getCurrentKey(), ruleId);
+
+        AggregationResult result = new AggregationResult(
+                ruleId,
+                rule.getRuleName(),
+                rule.getSourceTopic(),
+                rule.getSourceCluster(),
+                groupKey,
+                TimeUtils.epochMsToIstString(windowStartTs),
+                TimeUtils.epochMsToIstString(windowEndTs),
+                rule.getWindowing().getType(),
+                rule.getWindowing().getTimeType(),
+                results,
+                breached ? 1 : 0,
+                rule.getSeverityLevel(),
+                windowEventCount,
+                TimeUtils.currentIstString());
+        out.collect(result);
+
+        if (breached) {
+            VelocityAlert alert = new VelocityAlert(
+                    ruleId,
+                    rule.getRuleName(),
+                    rule.getSeverityLevel(),
+                    rule.getPenaltyTtlSeconds(),
+                    groupKey,
+                    rule.getSourceTopic(),
+                    rule.getSourceCluster(),
+                    result.getWindowStart(),
+                    result.getWindowEnd(),
+                    mapper.writeValueAsString(results),
+                    result.getEvaluatedAt());
+            ctx.output(ALERT_TAG, alert);
         }
     }
 

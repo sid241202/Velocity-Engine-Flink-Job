@@ -11,7 +11,7 @@ public final class TimeUtils {
 
     public static final ZoneId        INDIA_ZONE  = ZoneId.of("Asia/Kolkata");
     public static final DateTimeFormatter IST_FMT = DateTimeFormatter
-            .ofPattern("yyyy-MM-dd'T'HH:mm:ss")
+            .ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
             .withZone(INDIA_ZONE);
 
     private TimeUtils() {}

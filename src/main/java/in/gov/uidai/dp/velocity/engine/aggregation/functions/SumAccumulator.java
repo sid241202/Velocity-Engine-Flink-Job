@@ -23,7 +23,7 @@ public class SumAccumulator {
         state.put(bucketKey, (current == null ? 0.0 : current) + value);
     }
 
-    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
         double total = 0.0;
         Iterator<Map.Entry<String, Double>> iter = state.iterator();
 
@@ -31,7 +31,7 @@ public class SumAccumulator {
             Map.Entry<String, Double> entry = iter.next();
             if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
                 long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
-                if (bucketTs < windowStartTs) {
+                if (bucketTs < windowStartTs - allowedLatenessMs) {
                     iter.remove();
                 } else if (bucketTs < windowEndTs) {
                     total += entry.getValue();
@@ -40,6 +40,23 @@ public class SumAccumulator {
         }
         return total;
     }
+
+    public double computeNoPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+        double total = 0.0;
+        Iterator<Map.Entry<String, Double>> iter = state.iterator();
+
+        while (iter.hasNext()) {
+            Map.Entry<String, Double> entry = iter.next();
+            if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
+                long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
+                if (bucketTs >= windowStartTs && bucketTs < windowEndTs) {
+                    total += entry.getValue();
+                }
+            }
+        }
+        return total;
+    }
+
     public boolean isEmpty() throws Exception {
         return state.isEmpty();
     }

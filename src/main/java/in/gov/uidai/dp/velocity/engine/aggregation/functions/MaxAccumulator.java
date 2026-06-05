@@ -25,7 +25,7 @@ public class MaxAccumulator {
         }
     }
 
-    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+    public double computeAndPrune(String alias, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
         double max = -Double.MAX_VALUE;
         boolean found = false;
         Iterator<Map.Entry<String, Double>> iter = state.iterator();
@@ -34,9 +34,27 @@ public class MaxAccumulator {
             Map.Entry<String, Double> entry = iter.next();
             if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
                 long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
-                if (bucketTs < windowStartTs) {
+                if (bucketTs < windowStartTs - allowedLatenessMs) {
                     iter.remove();
                 } else if (bucketTs < windowEndTs) {
+                    found = true;
+                    if (entry.getValue() > max) max = entry.getValue();
+                }
+            }
+        }
+        return found ? max : 0.0;
+    }
+
+    public double computeNoPrune(String alias, long windowStartTs, long windowEndTs) throws Exception {
+        double max = -Double.MAX_VALUE;
+        boolean found = false;
+        Iterator<Map.Entry<String, Double>> iter = state.iterator();
+
+        while (iter.hasNext()) {
+            Map.Entry<String, Double> entry = iter.next();
+            if (alias.equals(TimeUtils.extractAlias(entry.getKey()))) {
+                long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
+                if (bucketTs >= windowStartTs && bucketTs < windowEndTs) {
                     found = true;
                     if (entry.getValue() > max) max = entry.getValue();
                 }

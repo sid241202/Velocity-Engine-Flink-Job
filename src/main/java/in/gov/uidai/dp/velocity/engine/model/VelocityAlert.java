@@ -5,7 +5,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
-import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -17,16 +16,12 @@ public class VelocityAlert implements Serializable {
     private String ruleId;
     private String ruleName;
     private String severityLevel;
-    private int    penaltyTtlSeconds;
+    private int penaltyTtlSeconds;
     private String groupKey;
     private String sourceTopic;
     private String cluster;
-
     private String windowStart;
-
     private String windowEnd;
-
     private String aggregationResults;
-
     private String triggeredAt;
 }

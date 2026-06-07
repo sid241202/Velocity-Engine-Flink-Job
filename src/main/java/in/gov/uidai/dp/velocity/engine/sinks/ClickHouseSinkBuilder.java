@@ -13,19 +13,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * ClickHouse HTTP sink that flushes immediately on every write for low-latency,
- * with batching support for high-throughput production use.
- * 
- * KEY DESIGN NOTE: Flink's Sink2 API does NOT call flush() on checkpoints.
- * flush(endOfInput=true) is only called at end-of-stream (never in streaming mode).
- * Therefore we flush on every write when buffer reaches batchSize OR when
- * a time threshold is exceeded since the last flush.
- */
 @Slf4j
 public class ClickHouseSinkBuilder {
 
@@ -94,7 +87,6 @@ public class ClickHouseSinkBuilder {
             log.debug("Buffered AggregationResult for rule={}, groupKey={}, buffer size={}",
                     value.getRuleId(), value.getGroupKey(), buffer.size());
 
-            // Flush if batch size reached OR time-based flush interval exceeded
             long now = System.currentTimeMillis();
             if (buffer.size() >= batchSize || (now - lastFlushTime) >= flushIntervalMs) {
                 doFlush();
@@ -103,11 +95,16 @@ public class ClickHouseSinkBuilder {
 
         @Override
         public void flush(boolean endOfInput) {
-            // Called by Flink only at end of stream (endOfInput=true)
-            // or never in streaming mode. We handle flushing in write() instead.
             if (!buffer.isEmpty()) {
                 doFlush();
             }
+        }
+
+        public Collection<List<AggregationResult>> snapshotState(long checkpointId) {
+            if (!buffer.isEmpty()) {
+                doFlush();
+            }
+            return Collections.emptyList();
         }
 
         private void doFlush() {
@@ -143,28 +140,31 @@ public class ClickHouseSinkBuilder {
                     .build();
 
             int maxRetries = 3;
-            long backoffMs = 1000;
+            long[] backoffMs = {500, 1000, 2000};
 
-            for (int i = 0; i <= maxRetries; i++) {
+            for (int i = 0; i < maxRetries; i++) {
                 try {
                     HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                    if (response.statusCode() != 200) {
-                        log.error("ClickHouse insert failed ({}): body={}, payload_preview={}",
-                                response.statusCode(), response.body(),
-                                payload.substring(0, Math.min(500, payload.length())));
-                        if (i == maxRetries || response.statusCode() == 400) {
-                            throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode()
-                                    + " body: " + response.body());
-                        }
-                        log.warn("Retrying {}/{}...", i + 1, maxRetries);
-                    } else {
+                    if (response.statusCode() == 200) {
                         log.info("Successfully wrote {} records to ClickHouse", toFlush.size());
                         return;
                     }
+                    log.error("ClickHouse insert failed ({}): body={}, payload_preview={}",
+                            response.statusCode(), response.body(),
+                            payload.substring(0, Math.min(500, payload.length())));
+                    if (response.statusCode() == 400) {
+                        throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode()
+                                + " body: " + response.body());
+                    }
+                    if (i == maxRetries - 1) {
+                        throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode()
+                                + " body: " + response.body());
+                    }
+                    log.warn("Retrying {}/{}...", i + 1, maxRetries);
                 } catch (RuntimeException re) {
-                    throw re; // Don't catch our own thrown RuntimeExceptions
+                    throw re;
                 } catch (Exception ex) {
-                    if (i == maxRetries) {
+                    if (i == maxRetries - 1) {
                         log.error("ClickHouse request failed after max retries", ex);
                         throw new RuntimeException("Failed to write batch to ClickHouse", ex);
                     }
@@ -172,8 +172,7 @@ public class ClickHouseSinkBuilder {
                 }
 
                 try {
-                    Thread.sleep(backoffMs);
-                    backoffMs *= 2;
+                    Thread.sleep(backoffMs[i]);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("Interrupted during backoff", e);

@@ -20,7 +20,7 @@ public class RuleDeserializer implements KafkaRecordDeserializationSchema<Veloci
     private transient ObjectMapper objectMapper;
 
     @Override
-public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<VelocityRule> out) throws IOException {
+    public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<VelocityRule> out) throws IOException {
         if (record.value() == null || record.value().length == 0) {
             log.warn("Received null/blank rule message — skipping");
             return;
@@ -63,8 +63,8 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Velocit
                 }
             }
 
-            log.info("Successfully deserialized Rule {} (Status: {}, Target: {})", 
-                    rule.getRuleId(), 
+            log.info("Successfully deserialized Rule {} (Status: {}, Target: {})",
+                    rule.getRuleId(),
                     rule.getStatus(), rule.getSourceTopic());
 
             out.collect(rule);
@@ -77,7 +77,7 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Velocit
     }
 
     @Override
-public TypeInformation<VelocityRule> getProducedType() {
+    public TypeInformation<VelocityRule> getProducedType() {
         return TypeInformation.of(VelocityRule.class);
     }
 }

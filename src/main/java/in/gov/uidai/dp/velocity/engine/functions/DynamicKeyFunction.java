@@ -36,7 +36,7 @@ public class DynamicKeyFunction extends BroadcastProcessFunction<Event, Velocity
     }
 
     @Override
-public void processElement(Event event, ReadOnlyContext ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
+    public void processElement(Event event, ReadOnlyContext ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
         ReadOnlyBroadcastState<String, VelocityRule> rulesState = ctx.getBroadcastState(RULE_STATE_DESC);
 
         String eventSourceTopic = String.valueOf(event.getFields().get("_source_topic"));
@@ -52,16 +52,14 @@ public void processElement(Event event, ReadOnlyContext ctx, Collector<Keyed<Eve
             if (!eventSourceTopic.equalsIgnoreCase(rule.getSourceTopic())) continue;
 
             if (FilterEvaluator.evaluate(event, rule.getFilters())) {
-
                 String groupKey = KeysExtractor.getKey(rule.getGrouping().getKeys(), event);
-
                 out.collect(new Keyed<>(event, groupKey, rule.getRuleId()));
             }
         }
     }
 
     @Override
-public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
+    public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<Keyed<Event, String, String>> out) throws Exception {
         BroadcastState<String, VelocityRule> rulesState = ctx.getBroadcastState(RULE_STATE_DESC);
 
         if (rule.isDeleted()) {

@@ -32,7 +32,7 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
     }
 
     @Override
-public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Event> out) throws IOException {
+    public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Event> out) throws IOException {
         if (record.value() == null || record.value().length == 0) {
             log.warn("Received null/empty record from topic={} partition={} offset={}",
                     record.topic(), record.partition(), record.offset());
@@ -55,7 +55,6 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Event> 
 
             Object dataObj = event.getFields().get("_data");
             if (dataObj != null && !(dataObj instanceof String)) {
-
                 event.put("_data", objectMapper.writeValueAsString(dataObj));
             }
 
@@ -64,7 +63,6 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Event> 
         } catch (Exception e) {
             log.error("Failed to deserialize event from topic={} offset={}: {}",
                     sourceTopic, record.offset(), e.getMessage());
-
         }
     }
 
@@ -82,7 +80,6 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Event> 
                 }
                 return Long.parseLong(rawTs.toString().trim());
             } else {
-
                 long parsed = TimeUtils.isoStringToEpochMs(rawTs.toString().trim());
                 return (parsed == -1) ? kafkaTimestamp : parsed;
             }
@@ -94,7 +91,7 @@ public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<Event> 
     }
 
     @Override
-public TypeInformation<Event> getProducedType() {
+    public TypeInformation<Event> getProducedType() {
         return TypeInformation.of(Event.class);
     }
 

@@ -18,24 +18,14 @@ public class AggregationResult implements Serializable {
     private String ruleName;
     private String sourceTopic;
     private String cluster;
-
     private String groupKey;
-
     private String windowStart;
-
     private String windowEnd;
-
     private String windowType;
-
     private String timeType;
-
     private Map<String, Double> aggregationResults;
-
     private int thresholdBreached;
-
     private String severityLevel;
-
     private long eventCount;
-
     private String evaluatedAt;
 }

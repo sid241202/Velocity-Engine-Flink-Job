@@ -9,7 +9,7 @@ import java.time.format.DateTimeParseException;
 @Slf4j
 public final class TimeUtils {
 
-    public static final ZoneId        INDIA_ZONE  = ZoneId.of("Asia/Kolkata");
+    public static final ZoneId INDIA_ZONE = ZoneId.of("Asia/Kolkata");
     public static final DateTimeFormatter IST_FMT = DateTimeFormatter
             .ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
             .withZone(INDIA_ZONE);
@@ -19,12 +19,10 @@ public final class TimeUtils {
     public static long isoStringToEpochMs(String ts) {
         if (ts == null || ts.isBlank()) return -1L;
         try {
-
             return Instant.parse(ts).toEpochMilli();
         } catch (DateTimeParseException ignored) {}
 
         try {
-
             LocalDateTime ldt = LocalDateTime.parse(ts, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
             return ldt.atZone(INDIA_ZONE).toInstant().toEpochMilli();
         } catch (DateTimeParseException e) {

@@ -17,12 +17,12 @@ public class RuleSnapshot implements Serializable {
     private String ruleId;
     private String ruleName;
     private String severityLevel;
-    private int    penaltyTtlSeconds;
+    private int penaltyTtlSeconds;
     private String sourceTopic;
     private String cluster;
-    private WindowingConfig     windowing;
+    private WindowingConfig windowing;
     private List<AggregationSpec> aggregations;
-    private HavingThresholds    havingThresholds;
+    private HavingThresholds havingThresholds;
     private long allowedLatenessMs;
 
     public static RuleSnapshot fromRule(VelocityRule rule, String cluster) {

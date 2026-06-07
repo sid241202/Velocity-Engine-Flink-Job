@@ -4,6 +4,7 @@ import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.typeinfo.Types;
 
 import java.util.Iterator;
@@ -13,8 +14,9 @@ public class MaxAccumulator {
 
     private final MapState<String, Double> state;
 
-    public MaxAccumulator(RuntimeContext ctx) {
+    public MaxAccumulator(RuntimeContext ctx, StateTtlConfig ttlConfig) {
         MapStateDescriptor<String, Double> desc = new MapStateDescriptor<>("max_acc", Types.STRING, Types.DOUBLE);
+        desc.enableTimeToLive(ttlConfig);
         this.state = ctx.getMapState(desc);
     }
 

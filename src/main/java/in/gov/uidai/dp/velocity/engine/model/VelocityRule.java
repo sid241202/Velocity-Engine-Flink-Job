@@ -18,21 +18,18 @@ public class VelocityRule implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @JsonProperty("rule_metadata")
-private RuleMetadata ruleMetadata;
+    private RuleMetadata ruleMetadata;
 
     @JsonProperty("execution_routing")
-private ExecutionRouting executionRouting;
+    private ExecutionRouting executionRouting;
 
     private FilterNode filters;
-
     private GroupingConfig grouping;
-
     private WindowingConfig windowing;
-
     private List<AggregationSpec> aggregations;
 
     @JsonProperty("having_thresholds")
-private HavingThresholds havingThresholds;
+    private HavingThresholds havingThresholds;
 
     public String getRuleId()        { return ruleMetadata != null ? ruleMetadata.getRuleId()        : null; }
     public String getRuleName()      { return ruleMetadata != null ? ruleMetadata.getRuleName()      : null; }
@@ -44,6 +41,6 @@ private HavingThresholds havingThresholds;
     public boolean isPaused()  { return "PAUSED".equalsIgnoreCase(getStatus()); }
     public boolean isDeleted() { return "DELETED".equalsIgnoreCase(getStatus()); }
 
-    public String getSourceTopic() { return executionRouting != null ? executionRouting.getTargetSourceTopic() : null; }
-    public String getSourceCluster()     { return executionRouting != null ? executionRouting.getTargetCluster()     : null; }
+    public String getSourceTopic()   { return executionRouting != null ? executionRouting.getTargetSourceTopic() : null; }
+    public String getSourceCluster() { return executionRouting != null ? executionRouting.getTargetCluster()     : null; }
 }

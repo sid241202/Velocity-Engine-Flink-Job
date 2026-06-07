@@ -4,6 +4,7 @@ import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
@@ -16,10 +17,11 @@ public class AvgAccumulator {
 
     private final MapState<String, Tuple2<Double, Long>> state;
 
-    public AvgAccumulator(RuntimeContext ctx) {
+    public AvgAccumulator(RuntimeContext ctx, StateTtlConfig ttlConfig) {
         MapStateDescriptor<String, Tuple2<Double, Long>> desc = new MapStateDescriptor<>(
                 "avg_acc", Types.STRING, TypeInformation.of(new TypeHint<Tuple2<Double, Long>>() {})
         );
+        desc.enableTimeToLive(ttlConfig);
         this.state = ctx.getMapState(desc);
     }
 

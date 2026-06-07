@@ -13,5 +13,5 @@ import java.io.Serializable;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class HavingThresholds implements Serializable {
     private static final long serialVersionUID = 1L;
-    private String expression; // JEXL expression, e.g. "(total_count >= 50) && (unique_uids > 10)"
+    private String expression;
 }

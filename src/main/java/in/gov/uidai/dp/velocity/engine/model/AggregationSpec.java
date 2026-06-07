@@ -17,13 +17,11 @@ public class AggregationSpec implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private String alias;
-
     private String field;
-
     private String function;
 
     @JsonProperty("cardinality_hint")
-private String cardinalityHint = "LOW";
+    private String cardinalityHint = "LOW";
 
     public boolean isCountDistinct() {
         return "COUNT_DISTINCT".equalsIgnoreCase(function);

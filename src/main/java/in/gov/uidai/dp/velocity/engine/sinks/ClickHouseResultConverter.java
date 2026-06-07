@@ -13,9 +13,7 @@ public class ClickHouseResultConverter {
 
     public static String toJsonEachRow(AggregationResult result) {
         try {
-            // Create a tree copy so we can override aggregationResults as a JSON string
             ObjectNode node = MAPPER.valueToTree(result);
-            // aggregationResults is a Map — serialize it to a JSON string value for the String column in ClickHouse
             if (result.getAggregationResults() != null) {
                 node.put("aggregationResults", MAPPER.writeValueAsString(result.getAggregationResults()));
             }

@@ -19,22 +19,22 @@ public class WindowingConfig implements Serializable {
     private String type;
 
     @JsonProperty("time_type")
-private String timeType;
+    private String timeType;
 
     @JsonProperty("timestamp_field")
-private String timestampField = "_event_timestamp_epoch_ms";
+    private String timestampField = "_event_timestamp_epoch_ms";
 
     @JsonProperty("timestamp_format")
-private String timestampFormat = "EPOCH_MILLIS";
+    private String timestampFormat = "EPOCH_MILLIS";
 
     @JsonProperty("size_ms")
-private long sizeMs;
+    private long sizeMs;
 
     @JsonProperty("slide_ms")
-private long slideMs;
+    private long slideMs;
 
     @JsonProperty("allowed_lateness_ms")
-private long allowedLatenessMs = 0L;
+    private long allowedLatenessMs = 0L;
 
     @JsonProperty("alignment_offset_ms")
     private long alignmentOffsetMs = 0L;
@@ -61,10 +61,8 @@ private long allowedLatenessMs = 0L;
     }
 
     public long getEffectiveAlignmentOffsetMs() {
-        // 19,800,000 ms is exactly 5 hours and 30 minutes (IST offset from UTC)
         long istOffsetMs = 19800000L;
         long slide = getEffectiveSlideMs();
-        
         long normalizedOffset = (alignmentOffsetMs - istOffsetMs) % slide;
         return normalizedOffset < 0 ? normalizedOffset + slide : normalizedOffset;
     }

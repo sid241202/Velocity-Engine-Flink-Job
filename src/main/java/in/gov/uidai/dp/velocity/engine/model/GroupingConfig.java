@@ -9,7 +9,8 @@ import java.io.Serializable;
 import java.util.List;
 
 @Data
-@NoArgsConstructor @AllArgsConstructor
+@NoArgsConstructor
+@AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class GroupingConfig implements Serializable {
     private static final long serialVersionUID = 1L;

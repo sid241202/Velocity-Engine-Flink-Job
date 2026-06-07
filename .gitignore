@@ -8,3 +8,8 @@ target/
 .DS_Store
 *.log
 failed_records/
+hs_err_pid*.log
+compile_log.txt
+cp.txt
+*.bat
+.vscode/

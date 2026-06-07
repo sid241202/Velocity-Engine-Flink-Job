@@ -1,5 +1,6 @@
 package in.gov.uidai.dp.velocity.engine.functions;
 
+import in.gov.uidai.dp.velocity.engine.config.AuthDemoConfig;
 import in.gov.uidai.dp.velocity.engine.model.Event;
 import in.gov.uidai.dp.velocity.engine.utils.FieldExtractor;
 
@@ -17,9 +18,8 @@ public class AuthDeduplicationFunction extends KeyedProcessFunction<String, Even
     private transient ValueState<Boolean> seenState;
 
     @Override
-public void open(OpenContext parameters) {
-
-        StateTtlConfig ttlConfig = StateTtlConfig.newBuilder(Duration.ofMinutes(15))
+    public void open(OpenContext parameters) {
+        StateTtlConfig ttlConfig = StateTtlConfig.newBuilder(Duration.ofMinutes(AuthDemoConfig.DEDUP_TTL_MINUTES))
                 .setUpdateType(StateTtlConfig.UpdateType.OnReadAndWrite)
                 .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
                 .cleanupInRocksdbCompactFilter(1000)
@@ -31,12 +31,10 @@ public void open(OpenContext parameters) {
     }
 
     @Override
-public void processElement(Event event, Context ctx, Collector<Event> out) throws Exception {
-
+    public void processElement(Event event, Context ctx, Collector<Event> out) throws Exception {
         String authCode = FieldExtractor.extractString(event, "_data.authCode");
 
         if (authCode == null || authCode.isEmpty()) {
-
             return;
         }
 

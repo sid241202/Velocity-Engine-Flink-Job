@@ -7,8 +7,10 @@ import in.gov.uidai.dp.velocity.engine.utils.FieldExtractor;
 import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import in.gov.uidai.dp.velocity.engine.aggregation.functions.*;
 import org.apache.flink.api.common.functions.RuntimeContext;
+import org.apache.flink.api.common.state.StateTtlConfig;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class BucketStateManager {
@@ -20,18 +22,17 @@ public class BucketStateManager {
     private final MaxAccumulator maxAcc;
     private final CountDistinctExact distinctExactAcc;
     private final CountDistinctHll distinctHllAcc;
-
     private final CountAccumulator rawEventCountAcc;
 
-    public BucketStateManager(RuntimeContext ctx) {
-        this.countAcc = new CountAccumulator(ctx);
-        this.sumAcc = new SumAccumulator(ctx);
-        this.avgAcc = new AvgAccumulator(ctx);
-        this.minAcc = new MinAccumulator(ctx);
-        this.maxAcc = new MaxAccumulator(ctx);
-        this.distinctExactAcc = new CountDistinctExact(ctx);
-        this.distinctHllAcc = new CountDistinctHll(ctx);
-        this.rawEventCountAcc = new CountAccumulator(ctx);
+    public BucketStateManager(RuntimeContext ctx, StateTtlConfig ttlConfig) {
+        this.countAcc = new CountAccumulator(ctx, ttlConfig);
+        this.sumAcc = new SumAccumulator(ctx, ttlConfig);
+        this.avgAcc = new AvgAccumulator(ctx, ttlConfig);
+        this.minAcc = new MinAccumulator(ctx, ttlConfig);
+        this.maxAcc = new MaxAccumulator(ctx, ttlConfig);
+        this.distinctExactAcc = new CountDistinctExact(ctx, ttlConfig);
+        this.distinctHllAcc = new CountDistinctHll(ctx, ttlConfig);
+        this.rawEventCountAcc = new CountAccumulator(ctx, "raw_event_count_acc", ttlConfig);
     }
 
     public void addEvent(VelocityRule rule, Event event, long eventTs) throws Exception {
@@ -71,10 +72,10 @@ public class BucketStateManager {
         }
     }
 
-    public Map<String, Double> computeWindowAndPrune(VelocityRule rule, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
+    public Map<String, Double> computeWindowAndPrune(List<AggregationSpec> aggregations, long windowStartTs, long windowEndTs, long allowedLatenessMs) throws Exception {
         Map<String, Double> results = new HashMap<>();
 
-        for (AggregationSpec spec : rule.getAggregations()) {
+        for (AggregationSpec spec : aggregations) {
             double finalVal = 0.0;
             String alias = spec.getAlias();
 
@@ -104,10 +105,10 @@ public class BucketStateManager {
         return results;
     }
 
-    public Map<String, Double> computeWindowNoPrune(VelocityRule rule, long windowStartTs, long windowEndTs) throws Exception {
+    public Map<String, Double> computeWindowNoPrune(List<AggregationSpec> aggregations, long windowStartTs, long windowEndTs) throws Exception {
         Map<String, Double> results = new HashMap<>();
 
-        for (AggregationSpec spec : rule.getAggregations()) {
+        for (AggregationSpec spec : aggregations) {
             double finalVal = 0.0;
             String alias = spec.getAlias();
 

@@ -4,6 +4,7 @@ import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.typeinfo.Types;
 
 import java.util.Iterator;
@@ -13,8 +14,13 @@ public class CountAccumulator {
 
     private final MapState<String, Long> state;
 
-    public CountAccumulator(RuntimeContext ctx) {
-        MapStateDescriptor<String, Long> desc = new MapStateDescriptor<>("count_acc", Types.STRING, Types.LONG);
+    public CountAccumulator(RuntimeContext ctx, StateTtlConfig ttlConfig) {
+        this(ctx, "count_acc", ttlConfig);
+    }
+
+    public CountAccumulator(RuntimeContext ctx, String stateName, StateTtlConfig ttlConfig) {
+        MapStateDescriptor<String, Long> desc = new MapStateDescriptor<>(stateName, Types.STRING, Types.LONG);
+        desc.enableTimeToLive(ttlConfig);
         this.state = ctx.getMapState(desc);
     }
 

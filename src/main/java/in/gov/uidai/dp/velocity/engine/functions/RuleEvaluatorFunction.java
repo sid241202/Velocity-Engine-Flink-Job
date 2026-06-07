@@ -1,6 +1,7 @@
 package in.gov.uidai.dp.velocity.engine.functions;
 
 import in.gov.uidai.dp.velocity.engine.aggregation.BucketStateManager;
+import in.gov.uidai.dp.velocity.engine.config.AuthDemoConfig;
 import in.gov.uidai.dp.velocity.engine.model.*;
 import in.gov.uidai.dp.velocity.engine.utils.HavingEvaluator;
 import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
@@ -13,6 +14,8 @@ import org.apache.flink.streaming.api.functions.co.KeyedBroadcastProcessFunction
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
+import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -26,9 +29,7 @@ public class RuleEvaluatorFunction
 
     private final String cluster;
     private transient ObjectMapper mapper;
-
     private transient BucketStateManager bucketStateManager;
-
     private transient ValueState<RuleSnapshot> ruleSnapshotState;
 
     public RuleEvaluatorFunction(String cluster) {
@@ -38,7 +39,14 @@ public class RuleEvaluatorFunction
     @Override
     public void open(OpenContext parameters) throws Exception {
         mapper = new ObjectMapper();
-        bucketStateManager = new BucketStateManager(getRuntimeContext());
+
+        StateTtlConfig ttlConfig = StateTtlConfig.newBuilder(Duration.ofHours(48))
+                .setUpdateType(StateTtlConfig.UpdateType.OnReadAndWrite)
+                .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
+                .cleanupInRocksdbCompactFilter(1000)
+                .build();
+
+        bucketStateManager = new BucketStateManager(getRuntimeContext(), ttlConfig);
 
         ValueStateDescriptor<RuleSnapshot> ruleSnapshotDesc = new ValueStateDescriptor<>(
                 "rule_snapshot", RuleSnapshot.class);
@@ -75,7 +83,9 @@ public class RuleEvaluatorFunction
                     } else {
                         eventTs = Long.parseLong(String.valueOf(rawTs));
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    log.warn("Failed to parse timestamp '{}' for rule {}: {}",
+                            rawTs, rule.getRuleId(), e.getMessage());
                 }
             }
             if (eventTs <= 0) {
@@ -100,13 +110,10 @@ public class RuleEvaluatorFunction
             long nextTimer = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
             ctx.timerService().registerEventTimeTimer(nextTimer);
 
-            // Late event detection (Option A: On-Demand)
-            // If this event belongs to a window that has already closed, emit an updated result NOW
             Long currentWatermark = ctx.timerService().currentWatermark();
             if (currentWatermark != null && currentWatermark != Long.MIN_VALUE) {
                 long eventWindowEnd = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
                 if (eventWindowEnd <= currentWatermark && eventWindowEnd + allowedLatenessMs > currentWatermark) {
-                    // This event is late but within the allowed lateness — emit updated result immediately
                     long lateWindowStart = eventWindowEnd - sizeMs;
                     emitResult(rule, lateWindowStart, eventWindowEnd, allowedLatenessMs, ctx, out);
                 }
@@ -117,7 +124,6 @@ public class RuleEvaluatorFunction
             ctx.timerService().registerProcessingTimeTimer(nextTimer);
         }
     }
-
 
     @Override
     public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<AggregationResult> out)
@@ -134,15 +140,10 @@ public class RuleEvaluatorFunction
             log.info("Removing DELETED rule from broadcast state: id={}", ruleId);
             ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).remove(ruleId);
         } else {
-            // Store ACTIVE and PAUSED rules. processElement() checks isActive()
-            // so PAUSED rules will be skipped during evaluation but remain in state
-            // for instant resumption.
             log.info("Updating rule in broadcast state: id={} status={}", ruleId, rule.getStatus());
             ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).put(ruleId, rule);
         }
     }
-
-
 
     @Override
     public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {
@@ -155,17 +156,14 @@ public class RuleEvaluatorFunction
         long windowStartTs = windowEndTs - rule.getWindowing().getSizeMs();
         long allowedLatenessMs = rule.getAllowedLatenessMs();
 
-        VelocityRule mockRule = new VelocityRule();
-        mockRule.setAggregations(rule.getAggregations());
-
-        Map<String, Double> results = bucketStateManager.computeWindowAndPrune(mockRule, windowStartTs, windowEndTs, allowedLatenessMs);
+        List<AggregationSpec> aggregations = rule.getAggregations();
+        Map<String, Double> results = bucketStateManager.computeWindowAndPrune(aggregations, windowStartTs, windowEndTs, allowedLatenessMs);
 
         long windowEventCount = 0L;
         if (results.containsKey("_raw_events_")) {
             windowEventCount = results.remove("_raw_events_").longValue();
         }
 
-        // Skip emitting if window has zero events (can happen when only old buckets were pruned)
         if (windowEventCount == 0 && results.values().stream().allMatch(v -> v == 0.0)) {
             reRegisterTimerIfNeeded(rule, timestamp, ctx);
             return;
@@ -212,9 +210,6 @@ public class RuleEvaluatorFunction
         reRegisterTimerIfNeeded(rule, timestamp, ctx);
     }
 
-    /**
-     * Re-registers the next slide timer if there is still state, otherwise clears the snapshot.
-     */
     private void reRegisterTimerIfNeeded(RuleSnapshot rule, long timestamp, OnTimerContext ctx) throws Exception {
         if (bucketStateManager.isEmpty()) {
             ruleSnapshotState.clear();
@@ -232,17 +227,10 @@ public class RuleEvaluatorFunction
         }
     }
 
-    /**
-     * Emits an updated AggregationResult for a late event without pruning state.
-     * Used for on-demand re-evaluation when a late event arrives for an already-closed window.
-     */
     private void emitResult(VelocityRule rule, long windowStartTs, long windowEndTs, long allowedLatenessMs,
                             ReadOnlyContext ctx, Collector<AggregationResult> out) throws Exception {
-        VelocityRule mockRule = new VelocityRule();
-        mockRule.setAggregations(rule.getAggregations());
-
-        // Use computeWindowNoPrune — do NOT evict state for late re-evaluations
-        Map<String, Double> results = bucketStateManager.computeWindowNoPrune(mockRule, windowStartTs, windowEndTs);
+        List<AggregationSpec> aggregations = rule.getAggregations();
+        Map<String, Double> results = bucketStateManager.computeWindowNoPrune(aggregations, windowStartTs, windowEndTs);
 
         long windowEventCount = 0L;
         if (results.containsKey("_raw_events_")) {
@@ -290,7 +278,6 @@ public class RuleEvaluatorFunction
     }
 
     private String getGroupKey(String compositeKey, String ruleId) {
-
         if (compositeKey != null && compositeKey.startsWith(ruleId + "|")) {
             return compositeKey.substring(ruleId.length() + 1);
         }

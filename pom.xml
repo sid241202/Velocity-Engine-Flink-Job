@@ -18,8 +18,6 @@
         <flink.version>2.2.0</flink.version>
         <flink.kafka.connector.version>4.0.1-2.0</flink.kafka.connector.version>
         <kafka.version>4.1.0</kafka.version>
-        <hadoop.version>3.3.6</hadoop.version>
-        <iceberg.version>1.10.1</iceberg.version>
         <jackson.version>2.17.0</jackson.version>
         <lombok.version>1.18.36</lombok.version>
         <log4j.version>2.25.4</log4j.version>
@@ -37,7 +35,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Security pinning — force upgrade of transitive deps -->
             <dependency><groupId>com.google.guava</groupId><artifactId>guava</artifactId><version>33.1.0-jre</version></dependency>
             <dependency><groupId>org.apache.avro</groupId><artifactId>avro</artifactId><version>1.11.3</version></dependency>
             <dependency><groupId>com.google.protobuf</groupId><artifactId>protobuf-java</artifactId><version>3.25.5</version></dependency>
@@ -46,7 +43,6 @@
             <dependency><groupId>com.nimbusds</groupId><artifactId>nimbus-jose-jwt</artifactId><version>9.37.3</version></dependency>
             <dependency><groupId>org.codehaus.jettison</groupId><artifactId>jettison</artifactId><version>1.5.4</version></dependency>
             <dependency><groupId>jakarta.activation</groupId><artifactId>jakarta.activation-api</artifactId><version>2.1.3</version></dependency>
-            <!-- Jetty pinning -->
             <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-server</artifactId><version>9.4.54.v20240208</version></dependency>
             <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-http</artifactId><version>9.4.54.v20240208</version></dependency>
             <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-util</artifactId><version>9.4.54.v20240208</version></dependency>
@@ -54,7 +50,6 @@
             <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-webapp</artifactId><version>9.4.54.v20240208</version></dependency>
             <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-servlet</artifactId><version>9.4.54.v20240208</version></dependency>
             <dependency><groupId>org.eclipse.jetty</groupId><artifactId>jetty-security</artifactId><version>9.4.54.v20240208</version></dependency>
-            <!-- Netty pinning -->
             <dependency><groupId>io.netty</groupId><artifactId>netty-handler</artifactId><version>4.1.120.Final</version></dependency>
             <dependency><groupId>io.netty</groupId><artifactId>netty-common</artifactId><version>4.1.120.Final</version></dependency>
             <dependency><groupId>io.netty</groupId><artifactId>netty-codec</artifactId><version>4.1.120.Final</version></dependency>
@@ -67,7 +62,6 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- ═══════════════════ Flink Core (provided — in cluster classpath) ═══════════════════ -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-core</artifactId>
@@ -99,7 +93,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- ═══════════════════ Kafka Connector ═══════════════════ -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-kafka</artifactId>
@@ -111,9 +104,6 @@
             <version>${kafka.version}</version>
         </dependency>
 
-
-
-        <!-- ═══════════════════ RocksDB state backend (provided) ═══════════════════ -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-statebackend-rocksdb</artifactId>
@@ -121,7 +111,6 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- ═══════════════════ Logging (runtime) ═══════════════════ -->
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-slf4j-impl</artifactId>
@@ -141,7 +130,6 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- ═══════════════════ SLF4J (provided — flink ships it) ═══════════════════ -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
@@ -149,28 +137,18 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- ═══════════════════ Jackson (bundled — flink version may differ) ═══════════════════ -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-yaml</artifactId>
-            <version>${jackson.version}</version>
-        </dependency>
 
-
-
-        <!-- ═══════════════════ HyperLogLog (high-cardinality COUNT_DISTINCT) ═══════════════════ -->
         <dependency>
             <groupId>com.clearspring.analytics</groupId>
             <artifactId>stream</artifactId>
             <version>2.9.8</version>
         </dependency>
 
-        <!-- ═══════════════════ Lombok ═══════════════════ -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -178,29 +156,12 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- ═══════════════════ Database & Cache ═══════════════════ -->
-        <dependency>
-            <groupId>redis.clients</groupId>
-            <artifactId>jedis</artifactId>
-            <version>5.1.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-connector-jdbc</artifactId>
-            <version>3.2.0-1.19</version>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>42.7.3</version>
-        </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-jexl3</artifactId>
             <version>3.3</version>
         </dependency>
 
-        <!-- ═══════════════════ Test ═══════════════════ -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-clients</artifactId>
@@ -253,7 +214,6 @@
                 </executions>
             </plugin>
 
-            <!-- Fat JAR — excludes Flink/Kafka/Logging (cluster provides them) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>

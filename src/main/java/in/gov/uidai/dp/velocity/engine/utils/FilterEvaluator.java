@@ -24,7 +24,7 @@ public final class FilterEvaluator {
                 if (isAnd && !result) return false;
                 if (!isAnd && result) return true;
             }
-            return isAnd; // AND: all passed → true; OR: none passed → false
+            return isAnd;
         }
 
         if (filterRoot.isCondition()) {

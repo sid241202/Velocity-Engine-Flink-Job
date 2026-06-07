@@ -36,7 +36,6 @@ public final class FieldExtractor {
         if (event == null || fieldPath == null || fieldPath.isBlank()) return null;
 
         if (fieldPath.startsWith("_data.")) {
-
             Map<String, Object> data = parseDataIfNeeded(event);
             if (data == null) return null;
 
@@ -48,7 +47,7 @@ public final class FieldExtractor {
     }
 
     @SuppressWarnings("unchecked")
-private static Map<String, Object> parseDataIfNeeded(Event event) {
+    private static Map<String, Object> parseDataIfNeeded(Event event) {
         if (event.parsedData != null) return event.parsedData;
 
         Object rawData = event.getFields().get("_data");
@@ -69,7 +68,7 @@ private static Map<String, Object> parseDataIfNeeded(Event event) {
     }
 
     @SuppressWarnings("unchecked")
-private static Object navigate(Map<String, Object> map, String dotPath) {
+    private static Object navigate(Map<String, Object> map, String dotPath) {
         String[] parts = dotPath.split("\\.", 2);
         Object val = map.get(parts[0]);
         if (val == null || parts.length == 1) return val;

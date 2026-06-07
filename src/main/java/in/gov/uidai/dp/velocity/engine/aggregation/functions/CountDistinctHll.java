@@ -5,6 +5,7 @@ import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.typeinfo.PrimitiveArrayTypeInfo;
 import org.apache.flink.api.common.typeinfo.Types;
 
@@ -15,10 +16,11 @@ public class CountDistinctHll {
 
     private final MapState<String, byte[]> state;
 
-    public CountDistinctHll(RuntimeContext ctx) {
+    public CountDistinctHll(RuntimeContext ctx, StateTtlConfig ttlConfig) {
         MapStateDescriptor<String, byte[]> desc = new MapStateDescriptor<>(
                 "distinct_hll_acc", Types.STRING, PrimitiveArrayTypeInfo.BYTE_PRIMITIVE_ARRAY_TYPE_INFO
         );
+        desc.enableTimeToLive(ttlConfig);
         this.state = ctx.getMapState(desc);
     }
 

@@ -1,6 +1,7 @@
 package in.gov.uidai.dp.velocity.engine.pipeline;
 
 import in.gov.uidai.dp.velocity.engine.config.AuthDemoConfig;
+import in.gov.uidai.dp.velocity.engine.config.ClickHouseSinkConfig;
 import in.gov.uidai.dp.velocity.engine.deserializers.EventDeserializer;
 import in.gov.uidai.dp.velocity.engine.deserializers.RuleDeserializer;
 import in.gov.uidai.dp.velocity.engine.functions.AuthDeduplicationFunction;
@@ -10,22 +11,24 @@ import in.gov.uidai.dp.velocity.engine.model.AggregationResult;
 import in.gov.uidai.dp.velocity.engine.model.Event;
 import in.gov.uidai.dp.velocity.engine.model.Keyed;
 import in.gov.uidai.dp.velocity.engine.model.VelocityRule;
+import in.gov.uidai.dp.velocity.engine.sinks.ClickHouseSinkBuilder;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.serialization.SerializationSchema;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.ExternalizedCheckpointRetention;
+import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.core.execution.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.BroadcastStream;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
-import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.configuration.ExternalizedCheckpointRetention;
-
-import in.gov.uidai.dp.velocity.engine.config.ClickHouseSinkConfig;
-import in.gov.uidai.dp.velocity.engine.sinks.ClickHouseSinkBuilder;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -33,98 +36,115 @@ import java.util.Collections;
 @Slf4j
 public class AuthDemoPipeline {
 
-        public void buildAndExecute() throws Exception {
-                Configuration conf = new Configuration();
-                conf.setString("state.backend.rocksdb.options-factory",
-                                "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
-                conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_STORAGE);
-                StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
+    public void buildAndExecute() throws Exception {
+        Configuration conf = new Configuration();
+        conf.setString("state.backend.rocksdb.options-factory",
+                "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
+        conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
 
-                env.setParallelism(2);
+        env.enableCheckpointing(30000L, CheckpointingMode.EXACTLY_ONCE);
+        env.getCheckpointConfig().setCheckpointTimeout(120000L);
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10000L);
+        env.getCheckpointConfig().setExternalizedCheckpointRetention(
+                ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
+        env.getCheckpointConfig().enableUnalignedCheckpoints();
 
-                env.enableCheckpointing(AuthDemoConfig.CHECKPOINT_INTERVAL_MS, CheckpointingMode.EXACTLY_ONCE);
-                env.getCheckpointConfig().setCheckpointTimeout(AuthDemoConfig.CHECKPOINT_TIMEOUT_MS);
-                env.getCheckpointConfig().setMinPauseBetweenCheckpoints(AuthDemoConfig.CHECKPOINT_MIN_PAUSE_MS);
-                env.getCheckpointConfig().setExternalizedCheckpointRetention(
-                                ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
-                env.getCheckpointConfig().enableUnalignedCheckpoints();
+        KafkaSource<Event> kafkaSource = KafkaSource.<Event>builder()
+                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
+                .setTopics(AuthDemoConfig.AUTH_TOPIC)
+                .setGroupId(AuthDemoConfig.AUTH_CONSUMER_GROUP)
+                .setStartingOffsets(OffsetsInitializer.earliest())
+                .setDeserializer(new EventDeserializer(AuthDemoConfig.AUTH_TOPIC,
+                        AuthDemoConfig.CLUSTER_NAME,
+                        AuthDemoConfig.EVENT_TIMESTAMP_FIELD,
+                        AuthDemoConfig.EVENT_TIMESTAMP_FORMAT))
+                .build();
 
-                KafkaSource<Event> kafkaSource = KafkaSource.<Event>builder()
-                                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP_SERVERS)
-                                .setTopics(AuthDemoConfig.AUTH_TOPIC)
-                                .setGroupId(AuthDemoConfig.CONSUMER_GROUP)
-                                .setStartingOffsets(OffsetsInitializer.earliest())
-                                .setDeserializer(new EventDeserializer(AuthDemoConfig.AUTH_TOPIC, "auth-cluster",
-                                                "_event_timestamp", "ISO_STRING"))
-                                .build();
+        WatermarkStrategy<Event> watermarkStrategy = WatermarkStrategy
+                .<Event>forBoundedOutOfOrderness(Duration.ofMillis(AuthDemoConfig.MAX_WATERMARK_LAG_MS))
+                .withIdleness(Duration.ofSeconds(30));
 
-                WatermarkStrategy<Event> watermarkStrategy = WatermarkStrategy
-                                .<Event>forBoundedOutOfOrderness(Duration.ofMillis(AuthDemoConfig.SOURCE_MAX_LATENESS_MS))
-                                .withIdleness(Duration.ofMillis(AuthDemoConfig.IDLENESS_MS));
+        DataStream<Event> eventsStream = env.fromSource(kafkaSource, watermarkStrategy, "Kafka-Auth-Events")
+                .uid("kafka-auth-events");
 
-                DataStream<Event> eventsStream = env.fromSource(kafkaSource, watermarkStrategy, "Kafka-Auth-Events")
-                                .uid("kafka-auth-events");
+        SingleOutputStreamOperator<Event> deduplicatedEvents = eventsStream
+                .keyBy(event -> {
+                    Object authCode = in.gov.uidai.dp.velocity.engine.utils.FieldExtractor
+                            .extractObject(event, "_data.authCode");
+                    return authCode != null ? authCode.toString() : "";
+                })
+                .process(new AuthDeduplicationFunction())
+                .name("AuthDeduplicator")
+                .uid("auth-deduplicator");
 
-                SingleOutputStreamOperator<Event> deduplicatedEvents = eventsStream
-                                .keyBy(event -> {
+        KafkaSource<VelocityRule> rulesSource = KafkaSource.<VelocityRule>builder()
+                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
+                .setTopics(AuthDemoConfig.RULES_TOPIC)
+                .setGroupId(AuthDemoConfig.RULES_CONSUMER_GROUP)
+                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST))
+                .setDeserializer(new RuleDeserializer())
+                .build();
 
-                                        Object authCode = in.gov.uidai.dp.velocity.engine.utils.FieldExtractor
-                                                        .extractObject(event, "_data.authCode");
-                                        return authCode != null ? authCode.toString() : "";
-                                })
-                                .process(new AuthDeduplicationFunction())
-                                .name("AuthDeduplicator")
-                                .uid("auth-deduplicator");
+        DataStream<VelocityRule> kafkaRules = env
+                .fromSource(rulesSource, WatermarkStrategy.<VelocityRule>forMonotonousTimestamps()
+                        .withIdleness(Duration.ofSeconds(30)), "Kafka-Rules")
+                .uid("kafka-rules");
 
-                KafkaSource<VelocityRule> rulesSource = KafkaSource.<VelocityRule>builder()
-                                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP_SERVERS)
-                                .setTopics(AuthDemoConfig.RULES_TOPIC)
-                                .setGroupId(AuthDemoConfig.RULES_CONSUMER_GROUP)
-                                .setStartingOffsets(OffsetsInitializer.committedOffsets(org.apache.kafka.clients.consumer.OffsetResetStrategy.LATEST))
-                                .setDeserializer(
-                                                new in.gov.uidai.dp.velocity.engine.deserializers.RuleDeserializer())
-                                .build();
+        BroadcastStream<VelocityRule> broadcastRules = kafkaRules.broadcast(DynamicKeyFunction.RULE_STATE_DESC);
 
-                DataStream<VelocityRule> kafkaRules = env
-                                .fromSource(rulesSource, WatermarkStrategy.<VelocityRule>forMonotonousTimestamps()
-                                        .withIdleness(Duration.ofMillis(AuthDemoConfig.IDLENESS_MS)), "Kafka-Rules")
-                                .uid("kafka-rules");
+        SingleOutputStreamOperator<Keyed<Event, String, String>> keyedEvents = deduplicatedEvents
+                .connect(broadcastRules)
+                .process(new DynamicKeyFunction(AuthDemoConfig.CLUSTER_NAME))
+                .name("DynamicKeyFunction")
+                .uid("dynamic-key-function");
 
-                BroadcastStream<VelocityRule> broadcastRules = kafkaRules.broadcast(DynamicKeyFunction.RULE_STATE_DESC);
+        SingleOutputStreamOperator<AggregationResult> results = keyedEvents
+                .keyBy(keyed -> keyed.getId() + "|" + keyed.getKey())
+                .connect(broadcastRules)
+                .process(new RuleEvaluatorFunction(AuthDemoConfig.CLUSTER_NAME))
+                .name("RuleEvaluatorFunction")
+                .uid("rule-evaluator-function");
 
-                String clusterName = "auth-cluster";
+        ClickHouseSinkConfig chConfig = ClickHouseSinkConfig.builder()
+                .hosts(Collections.singletonList(AuthDemoConfig.CH_HOSTS))
+                .user(AuthDemoConfig.CH_USER)
+                .password(AuthDemoConfig.CH_PASSWORD)
+                .database(AuthDemoConfig.CH_DATABASE)
+                .table(AuthDemoConfig.CH_TABLE)
+                .autoCreateDdl(true)
+                .useDistributed(false)
+                .maxBufferSize(AuthDemoConfig.CH_BATCH_SIZE)
+                .flushIntervalMs(AuthDemoConfig.CH_FLUSH_INTERVAL_MS)
+                .build();
 
-                SingleOutputStreamOperator<Keyed<Event, String, String>> keyedEvents = deduplicatedEvents
-                                .connect(broadcastRules)
-                                .process(new DynamicKeyFunction(clusterName))
-                                .name("DynamicKeyFunction")
-                                .uid("dynamic-key-function");
+        results.sinkTo(ClickHouseSinkBuilder.build(chConfig))
+                .name("ClickHouseSink")
+                .uid("clickhouse-sink");
 
-                SingleOutputStreamOperator<AggregationResult> results = keyedEvents
+        ObjectMapper resultMapper = new ObjectMapper();
+        KafkaSink<AggregationResult> kafkaResultsSink = KafkaSink.<AggregationResult>builder()
+                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
+                .setRecordSerializer(KafkaRecordSerializationSchema.builder()
+                        .setTopic(AuthDemoConfig.RESULTS_TOPIC)
+                        .setKeySerializationSchema((SerializationSchema<AggregationResult>) r ->
+                                r.getRuleId() != null ? r.getRuleId().getBytes() : new byte[0])
+                        .setValueSerializationSchema((SerializationSchema<AggregationResult>) r -> {
+                            try {
+                                return resultMapper.writeValueAsBytes(r);
+                            } catch (Exception e) {
+                                return new byte[0];
+                            }
+                        })
+                        .build())
+                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                .build();
 
-                                .keyBy(keyed -> keyed.getId() + "|" + keyed.getKey())
-                                .connect(broadcastRules)
-                                .process(new RuleEvaluatorFunction(clusterName))
-                                .name("RuleEvaluatorFunction")
-                                .uid("rule-evaluator-function");
+        results.sinkTo(kafkaResultsSink)
+                .name("KafkaResultsSink")
+                .uid("kafka-results-sink");
 
-                ClickHouseSinkConfig chConfig = new ClickHouseSinkConfig();
-                chConfig.setHosts(Collections.singletonList(AuthDemoConfig.CLICKHOUSE_HOSTS));
-                chConfig.setUser(AuthDemoConfig.CLICKHOUSE_USER);
-                chConfig.setPassword(AuthDemoConfig.CLICKHOUSE_PASSWORD);
-                chConfig.setDatabase(AuthDemoConfig.CLICKHOUSE_DATABASE);
-                chConfig.setTable(AuthDemoConfig.CLICKHOUSE_TABLE);
-                chConfig.setAutoCreateDdl(true);
-                chConfig.setUseDistributed(false);
-                chConfig.setMaxBufferSize(1);           // flush every record immediately for testing
-                chConfig.setFlushIntervalMs(1000L);     // 1-second safety net
-
-                results.sinkTo(ClickHouseSinkBuilder.build(chConfig))
-                                .name("ClickHouseSink")
-                                .uid("clickhouse-sink")
-                                .setParallelism(2);
-
-                log.info("Executing Velocity Engine Auth Demo");
-                env.execute("UIDAI Velocity Engine Auth Demo");
-        }
+        log.info("Executing Velocity Engine Auth Demo");
+        env.execute("UIDAI Velocity Engine Auth Demo");
+    }
 }

@@ -41,9 +41,10 @@ public class AuthDemoPipeline {
                 "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
         conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
+        env.setParallelism(9);
 
-        env.enableCheckpointing(30000L, CheckpointingMode.EXACTLY_ONCE);
-        env.getCheckpointConfig().setCheckpointTimeout(120000L);
+        env.enableCheckpointing(60000L, CheckpointingMode.EXACTLY_ONCE);
+        env.getCheckpointConfig().setCheckpointTimeout(600000L);
         env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10000L);
         env.getCheckpointConfig().setExternalizedCheckpointRetention(
                 ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
@@ -88,7 +89,8 @@ public class AuthDemoPipeline {
         DataStream<VelocityRule> kafkaRules = env
                 .fromSource(rulesSource, WatermarkStrategy.<VelocityRule>forMonotonousTimestamps()
                         .withIdleness(Duration.ofSeconds(30)), "Kafka-Rules")
-                .uid("kafka-rules");
+                .uid("kafka-rules")
+                .setParallelism(1);
 
         BroadcastStream<VelocityRule> broadcastRules = kafkaRules.broadcast(DynamicKeyFunction.RULE_STATE_DESC);
 
@@ -111,15 +113,16 @@ public class AuthDemoPipeline {
                 .password(AuthDemoConfig.CH_PASSWORD)
                 .database(AuthDemoConfig.CH_DATABASE)
                 .table(AuthDemoConfig.CH_TABLE)
-                .autoCreateDdl(true)
-                .useDistributed(false)
+                .autoCreateDdl(false)
+                .useDistributed(true)
                 .maxBufferSize(AuthDemoConfig.CH_BATCH_SIZE)
                 .flushIntervalMs(AuthDemoConfig.CH_FLUSH_INTERVAL_MS)
                 .build();
 
         results.sinkTo(ClickHouseSinkBuilder.build(chConfig))
                 .name("ClickHouseSink")
-                .uid("clickhouse-sink");
+                .uid("clickhouse-sink")
+                .setParallelism(3);
 
         KafkaSink<AggregationResult> kafkaResultsSink = KafkaSink.<AggregationResult>builder()
                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
@@ -134,7 +137,8 @@ public class AuthDemoPipeline {
 
         results.sinkTo(kafkaResultsSink)
                 .name("KafkaResultsSink")
-                .uid("kafka-results-sink");
+                .uid("kafka-results-sink")
+                .setParallelism(3);
 
         log.info("Executing Velocity Engine Auth Demo");
         env.execute("UIDAI Velocity Engine Auth Demo");

@@ -48,8 +48,8 @@ public class DynamicKeyFunction extends BroadcastProcessFunction<Event, Velocity
             VelocityRule rule = entry.getValue();
 
             if (!rule.isActive()) continue;
-            if (!cluster.equalsIgnoreCase(rule.getSourceCluster())) continue;
-            if (!eventSourceTopic.equalsIgnoreCase(rule.getSourceTopic())) continue;
+//            if (!cluster.equalsIgnoreCase(rule.getSourceCluster())) continue;
+//            if (!eventSourceTopic.equalsIgnoreCase(rule.getSourceTopic())) continue; TODO
 
             if (FilterEvaluator.evaluate(event, rule.getFilters())) {
                 String groupKey = KeysExtractor.getKey(rule.getGrouping().getKeys(), event);

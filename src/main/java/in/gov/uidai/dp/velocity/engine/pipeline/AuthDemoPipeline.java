@@ -12,7 +12,6 @@ import in.gov.uidai.dp.velocity.engine.model.Event;
 import in.gov.uidai.dp.velocity.engine.model.Keyed;
 import in.gov.uidai.dp.velocity.engine.model.VelocityRule;
 import in.gov.uidai.dp.velocity.engine.sinks.ClickHouseSinkBuilder;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SerializationSchema;
@@ -54,7 +53,7 @@ public class AuthDemoPipeline {
                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
                 .setTopics(AuthDemoConfig.AUTH_TOPIC)
                 .setGroupId(AuthDemoConfig.AUTH_CONSUMER_GROUP)
-                .setStartingOffsets(OffsetsInitializer.earliest())
+                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST))
                 .setDeserializer(new EventDeserializer(AuthDemoConfig.AUTH_TOPIC,
                         AuthDemoConfig.CLUSTER_NAME,
                         AuthDemoConfig.EVENT_TIMESTAMP_FIELD,
@@ -82,7 +81,7 @@ public class AuthDemoPipeline {
                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
                 .setTopics(AuthDemoConfig.RULES_TOPIC)
                 .setGroupId(AuthDemoConfig.RULES_CONSUMER_GROUP)
-                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST))
+                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.EARLIEST))
                 .setDeserializer(new RuleDeserializer())
                 .build();
 
@@ -122,20 +121,13 @@ public class AuthDemoPipeline {
                 .name("ClickHouseSink")
                 .uid("clickhouse-sink");
 
-        ObjectMapper resultMapper = new ObjectMapper();
         KafkaSink<AggregationResult> kafkaResultsSink = KafkaSink.<AggregationResult>builder()
                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
                         .setTopic(AuthDemoConfig.RESULTS_TOPIC)
                         .setKeySerializationSchema((SerializationSchema<AggregationResult>) r ->
                                 r.getRuleId() != null ? r.getRuleId().getBytes() : new byte[0])
-                        .setValueSerializationSchema((SerializationSchema<AggregationResult>) r -> {
-                            try {
-                                return resultMapper.writeValueAsBytes(r);
-                            } catch (Exception e) {
-                                return new byte[0];
-                            }
-                        })
+                        .setValueSerializationSchema(new ResultSerializationSchema())
                         .build())
                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build();

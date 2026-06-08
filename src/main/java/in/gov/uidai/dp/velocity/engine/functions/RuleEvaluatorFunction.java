@@ -50,6 +50,7 @@ public class RuleEvaluatorFunction
 
         ValueStateDescriptor<RuleSnapshot> ruleSnapshotDesc = new ValueStateDescriptor<>(
                 "rule_snapshot", RuleSnapshot.class);
+        ruleSnapshotDesc.enableTimeToLive(ttlConfig);
         ruleSnapshotState = getRuntimeContext().getState(ruleSnapshotDesc);
     }
 

@@ -100,12 +100,6 @@ public class ClickHouseSinkBuilder {
             }
         }
 
-        public Collection<List<AggregationResult>> snapshotState(long checkpointId) {
-            if (!buffer.isEmpty()) {
-                doFlush();
-            }
-            return Collections.emptyList();
-        }
 
         private void doFlush() {
             if (buffer.isEmpty()) return;
@@ -139,8 +133,8 @@ public class ClickHouseSinkBuilder {
                     .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                     .build();
 
-            int maxRetries = 3;
-            long[] backoffMs = {500, 1000, 2000};
+            int maxRetries = 5;
+            long[] backoffMs = {500, 1000, 2000, 4000, 8000};
 
             for (int i = 0; i < maxRetries; i++) {
                 try {
@@ -149,41 +143,47 @@ public class ClickHouseSinkBuilder {
                         log.info("Successfully wrote {} records to ClickHouse", toFlush.size());
                         return;
                     }
-                    log.error("ClickHouse insert failed ({}): body={}, payload_preview={}",
-                            response.statusCode(), response.body(),
-                            payload.substring(0, Math.min(500, payload.length())));
+                    log.error("ClickHouse insert failed ({}): body={}",
+                            response.statusCode(), response.body());
                     if (response.statusCode() == 400) {
-                        throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode()
-                                + " body: " + response.body());
+                        log.error("ClickHouse 400 Bad Request — dropping batch of {} records (schema/data error)", toFlush.size());
+                        return;
                     }
                     if (i == maxRetries - 1) {
-                        throw new RuntimeException("ClickHouse insert failed with status: " + response.statusCode()
-                                + " body: " + response.body());
+                        log.error("ClickHouse insert failed after {} retries — dropping batch of {} records", maxRetries, toFlush.size());
+                        return;
                     }
                     log.warn("Retrying {}/{}...", i + 1, maxRetries);
-                } catch (RuntimeException re) {
-                    throw re;
                 } catch (Exception ex) {
                     if (i == maxRetries - 1) {
-                        log.error("ClickHouse request failed after max retries", ex);
-                        throw new RuntimeException("Failed to write batch to ClickHouse", ex);
+                        log.error("ClickHouse request failed after {} retries — dropping batch of {} records", maxRetries, toFlush.size(), ex);
+                        return;
                     }
-                    log.warn("ClickHouse request failed with exception. Retrying {}/{}...", i + 1, maxRetries, ex);
+                    log.warn("ClickHouse request failed. Retrying {}/{}...", i + 1, maxRetries, ex);
                 }
 
                 try {
                     Thread.sleep(backoffMs[i]);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new RuntimeException("Interrupted during backoff", e);
+                    log.warn("Interrupted during backoff — dropping batch of {} records", toFlush.size());
+                    return;
                 }
             }
         }
 
         @Override
         public void close() {
-            doFlush();
+            flush(true);
             executor.shutdown();
+            try {
+                if (!executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }

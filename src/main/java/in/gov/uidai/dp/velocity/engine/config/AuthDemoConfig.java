@@ -5,9 +5,9 @@ public final class AuthDemoConfig {
     // ==================== KAFKA ====================
     public static final String KAFKA_BOOTSTRAP = "10.10.107.67:9092,10.10.106.91:9092,10.10.107.133:9092,10.10.107.103:9092,10.10.107.112:9092,10.10.107.177:9092,10.10.107.105:9092";
     public static final String AUTH_TOPIC = "BI.AUTH.AUTH_TXN.UNION.V1";
-    public static final String AUTH_CONSUMER_GROUP = "STROT.APPLICATION.VELOCITY_ENGINE";
+    public static final String AUTH_CONSUMER_GROUP = "STROT.APPLICATION.VELOCITY.ENGINE";
     public static final String RULES_TOPIC = "DE.AUTH.VELOCITY_ENGINE.RULES";
-    public static final String RULES_CONSUMER_GROUP = "STROT.APPLICATION.VELOCITY_ENGINE";
+    public static final String RULES_CONSUMER_GROUP = "STROT.APPLICATION.VELOCITY.ENGINE";
     public static final String RESULTS_TOPIC = "DE.AUTH.VELOCITY_ENGINE.RESULTS";
     public static final String ALERTS_TOPIC = "DE.AUTH.VELOCITY_ENGINE.ALERTS";
 

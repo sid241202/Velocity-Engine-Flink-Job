@@ -35,6 +35,7 @@ public class ClickHouseDdlInitializer {
                 ruleName String,
                 sourceTopic String,
                 cluster String,
+                entityName String,
                 groupKey String,
                 windowStart DateTime64(3, 'Asia/Kolkata'),
                 windowEnd DateTime64(3, 'Asia/Kolkata'),

@@ -18,6 +18,7 @@ public class AggregationResult implements Serializable {
     private String ruleName;
     private String sourceTopic;
     private String cluster;
+    private String entityName;
     private String groupKey;
     private String windowStart;
     private String windowEnd;

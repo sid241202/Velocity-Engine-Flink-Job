@@ -43,4 +43,5 @@ public class VelocityRule implements Serializable {
 
     public String getSourceTopic()   { return executionRouting != null ? executionRouting.getTargetSourceTopic() : null; }
     public String getSourceCluster() { return executionRouting != null ? executionRouting.getTargetCluster()     : null; }
+    public String getEntityName()    { return grouping != null ? grouping.getEntityName() : null; }
 }

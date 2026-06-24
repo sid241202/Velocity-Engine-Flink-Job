@@ -82,7 +82,7 @@ public class AuthDemoPipeline {
                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
                 .setTopics(AuthDemoConfig.RULES_TOPIC)
                 .setGroupId(AuthDemoConfig.RULES_CONSUMER_GROUP)
-                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.EARLIEST))
+                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST))
                 .setDeserializer(new RuleDeserializer())
                 .build();
 
@@ -107,22 +107,22 @@ public class AuthDemoPipeline {
                 .name("RuleEvaluatorFunction")
                 .uid("rule-evaluator-function");
 
-        ClickHouseSinkConfig chConfig = ClickHouseSinkConfig.builder()
-                .hosts(Collections.singletonList(AuthDemoConfig.CH_HOSTS))
-                .user(AuthDemoConfig.CH_USER)
-                .password(AuthDemoConfig.CH_PASSWORD)
-                .database(AuthDemoConfig.CH_DATABASE)
-                .table(AuthDemoConfig.CH_TABLE)
-                .autoCreateDdl(false)
-                .useDistributed(true)
-                .maxBufferSize(AuthDemoConfig.CH_BATCH_SIZE)
-                .flushIntervalMs(AuthDemoConfig.CH_FLUSH_INTERVAL_MS)
-                .build();
-
-        results.sinkTo(ClickHouseSinkBuilder.build(chConfig))
-                .name("ClickHouseSink")
-                .uid("clickhouse-sink")
-                .setParallelism(3);
+//        ClickHouseSinkConfig chConfig = ClickHouseSinkConfig.builder()
+//                .hosts(Collections.singletonList(AuthDemoConfig.CH_HOSTS))
+//                .user(AuthDemoConfig.CH_USER)
+//                .password(AuthDemoConfig.CH_PASSWORD)
+//                .database(AuthDemoConfig.CH_DATABASE)
+//                .table(AuthDemoConfig.CH_TABLE)
+//                .autoCreateDdl(false)
+//                .useDistributed(true)
+//                .maxBufferSize(AuthDemoConfig.CH_BATCH_SIZE)
+//                .flushIntervalMs(AuthDemoConfig.CH_FLUSH_INTERVAL_MS)
+//                .build();
+//
+//        results.sinkTo(ClickHouseSinkBuilder.build(chConfig))
+//                .name("ClickHouseSink")
+//                .uid("clickhouse-sink")
+//                .setParallelism(3);
 
         KafkaSink<AggregationResult> kafkaResultsSink = KafkaSink.<AggregationResult>builder()
                 .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
@@ -135,10 +135,10 @@ public class AuthDemoPipeline {
                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .build();
 
-        results.sinkTo(kafkaResultsSink)
+        results.filter(msg-> msg.getThresholdBreached()==1).sinkTo(kafkaResultsSink)
                 .name("KafkaResultsSink")
                 .uid("kafka-results-sink")
-                .setParallelism(3);
+                .setParallelism(9);
 
         log.info("Executing Velocity Engine Auth Demo");
         env.execute("UIDAI Velocity Engine Auth Demo");

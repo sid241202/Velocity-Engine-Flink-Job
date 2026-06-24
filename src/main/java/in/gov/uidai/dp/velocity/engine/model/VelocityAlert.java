@@ -17,6 +17,7 @@ public class VelocityAlert implements Serializable {
     private String ruleName;
     private String severityLevel;
     private int penaltyTtlSeconds;
+    private String entityName;
     private String groupKey;
     private String sourceTopic;
     private String cluster;

@@ -20,6 +20,7 @@ public class RuleSnapshot implements Serializable {
     private int penaltyTtlSeconds;
     private String sourceTopic;
     private String cluster;
+    private String entityName;
     private WindowingConfig windowing;
     private List<AggregationSpec> aggregations;
     private HavingThresholds havingThresholds;
@@ -33,6 +34,7 @@ public class RuleSnapshot implements Serializable {
                 rule.getPenaltyTtlSeconds(),
                 rule.getSourceTopic(),
                 cluster,
+                rule.getGrouping() != null ? rule.getGrouping().getEntityName() : null,
                 rule.getWindowing(),
                 rule.getAggregations(),
                 rule.getHavingThresholds(),

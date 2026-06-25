@@ -92,6 +92,8 @@ public class RedisSink implements Sink<AnomalyEvent> {
         @Override
         public void write(AnomalyEvent event, Context context) {
             if (event == null || event.getId() == null || event.getEntityValue() == null) return;
+            // Use per-event TTL (from rule_metadata.penalty_ttl_seconds); fall back to sink-level default
+            int effectiveTtl = event.getPenaltyTtlSeconds() > 0 ? event.getPenaltyTtlSeconds() : penaltyTtlSeconds;
             long[] backoffMs = {200, 500, 1000};
             for (int i = 0; i < 3; i++) {
                 try {
@@ -99,14 +101,14 @@ public class RedisSink implements Sink<AnomalyEvent> {
                     String val = event.getEntityValue();
                     if (config.getMode() == RedisConfig.Mode.CLUSTER) {
                         jedisCluster.sadd(key, val);
-                        if (penaltyTtlSeconds > 0) jedisCluster.expire(key, penaltyTtlSeconds);
+                        if (effectiveTtl > 0) jedisCluster.expire(key, effectiveTtl);
                     } else {
                         try (Jedis j = jedisPool.getResource()) {
                             j.sadd(key, val);
-                            if (penaltyTtlSeconds > 0) j.expire(key, penaltyTtlSeconds);
+                            if (effectiveTtl > 0) j.expire(key, effectiveTtl);
                         }
                     }
-                    log.debug("Redis SADD key={} val={} ttl={}s", key, val, penaltyTtlSeconds);
+                    log.debug("Redis SADD key={} val={} ttl={}s", key, val, effectiveTtl);
                     return;
                 } catch (Exception e) {
                     if (i == 2) log.error("RedisSink failed after 3 attempts key={}: {}", event.getId(), e.getMessage());

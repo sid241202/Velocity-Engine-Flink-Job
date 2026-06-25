@@ -14,4 +14,5 @@ public class AnomalyEvent implements Serializable {
     private String id;
     private String entityValue;
     private String producedAt;
+    private int penaltyTtlSeconds; // Redis key TTL from rule_metadata — 0 = use sink default
 }

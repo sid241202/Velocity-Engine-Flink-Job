@@ -102,7 +102,7 @@ public class RuleEvaluatorFunction
 
         String groupKey = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
         String anomalyVal = resolveAnomalyVal(event, rule, groupKey);
-        AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), anomalyVal, TimeUtils.currentIstString());
+        AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), anomalyVal, TimeUtils.currentIstString(), rule.getPenaltyTtlSeconds());
 
         SinkConfig sinks = rule.getEffectiveSinks();
         if (sinks.isAnomalySinkEnabled()) ctx.output(ANOMALY_TAG, anomaly);
@@ -151,7 +151,7 @@ public class RuleEvaluatorFunction
             String bucketKey = rule.getRuleId() + "#" + winStart;
             Set<String> fired = anomalyFiredState.value();
             if (fired == null || !fired.contains(bucketKey)) {
-                AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), groupKey, producedAt);
+                AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), groupKey, producedAt, rule.getPenaltyTtlSeconds());
                 if (rule.getSinks().isAnomalySinkEnabled()) ctx.output(ANOMALY_TAG, anomaly);
                 if (rule.getSinks().isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
                 if (fired == null) fired = new HashSet<>();

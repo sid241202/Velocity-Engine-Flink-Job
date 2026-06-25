@@ -120,7 +120,7 @@ public class AuthDemoPipeline {
 
                 // Redis Anomaly Store Sink
                 results.getSideOutput(RuleEvaluatorFunction.REDIS_TAG)
-                                .sinkTo(new RedisSink(RedisConfig.fromConfig(), 3600))
+                                .sinkTo(new RedisSink(RedisConfig.fromConfig(), AuthDemoConfig.REDIS_DEFAULT_TTL_SECONDS))
                                 .name("RedisAnomalyStoreSink").uid("redis-anomaly-store-sink").setParallelism(3);
 
                 log.info("Executing UIDAI Velocity Engine — 3-sink: AggKafka + AnomalyKafka + Redis");

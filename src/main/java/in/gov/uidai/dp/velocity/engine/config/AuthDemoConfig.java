@@ -22,15 +22,17 @@ public final class AuthDemoConfig {
     public static final long   CH_FLUSH_INTERVAL_MS = 5000;
 
     // ==================== REDIS ====================
-    public static final String REDIS_MODE           = "STANDALONE";
-    public static final String REDIS_HOSTS          = "127.0.0.1:6379";
-    public static final String REDIS_PASSWORD       = "";
-    public static final int    REDIS_MAX_TOTAL      = 16;
-    public static final int    REDIS_MAX_IDLE       = 8;
-    public static final int    REDIS_MIN_IDLE       = 2;
-    public static final int    REDIS_TIMEOUT_MS     = 3000;
+    public static final String REDIS_MODE               = "STANDALONE";
+    public static final String REDIS_HOSTS              = "127.0.0.1:6379";
+    public static final String REDIS_PASSWORD           = "";
+    public static final int    REDIS_MAX_TOTAL          = 16;
+    public static final int    REDIS_MAX_IDLE           = 8;
+    public static final int    REDIS_MIN_IDLE           = 2;
+    public static final int    REDIS_TIMEOUT_MS         = 3000;
     public static final int    REDIS_CONNECT_TIMEOUT_MS = 2000;
-    public static final int    REDIS_MAX_ATTEMPTS   = 5;
+    public static final int    REDIS_MAX_ATTEMPTS       = 5;
+    /** Fallback TTL (seconds) for the Redis penalty key when the rule does not specify one. */
+    public static final int    REDIS_DEFAULT_TTL_SECONDS = 3600; // 1 hour
 
     // ==================== CHECKPOINT ====================
     public static final String CHECKPOINT_DIR = "s3a://prd-bi-data-platform-configs/flink/checkpoints/velocity-auth/";

@@ -85,7 +85,7 @@ public class ClickHouseSinkBuilder {
         public void write(AggregationResult value, Context context) {
             buffer.add(value);
             log.debug("Buffered AggregationResult for rule={}, groupKey={}, buffer size={}",
-                    value.getRuleId(), value.getGroupKey(), buffer.size());
+                    value.getId(), value.getEntityValue(), buffer.size());
 
             long now = System.currentTimeMillis();
             if (buffer.size() >= batchSize || (now - lastFlushTime) >= flushIntervalMs) {

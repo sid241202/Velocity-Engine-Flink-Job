@@ -1,8 +1,8 @@
 package in.gov.uidai.dp.velocity.engine.functions;
 
 import in.gov.uidai.dp.velocity.engine.aggregation.BucketStateManager;
-import in.gov.uidai.dp.velocity.engine.config.AuthDemoConfig;
 import in.gov.uidai.dp.velocity.engine.model.*;
+import in.gov.uidai.dp.velocity.engine.utils.FieldExtractor;
 import in.gov.uidai.dp.velocity.engine.utils.HavingEvaluator;
 import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,277 +15,209 @@ import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 public class RuleEvaluatorFunction
         extends KeyedBroadcastProcessFunction<String, Keyed<Event, String, String>, VelocityRule, AggregationResult> {
 
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
-    public static final OutputTag<VelocityAlert> ALERT_TAG = new OutputTag<VelocityAlert>("velocity-alerts") {
-    };
+    public static final OutputTag<AnomalyEvent> ANOMALY_TAG = new OutputTag<AnomalyEvent>("anomaly-events") {};
+    public static final OutputTag<AnomalyEvent> REDIS_TAG   = new OutputTag<AnomalyEvent>("anomaly-redis") {};
 
     private final String cluster;
     private transient ObjectMapper mapper;
     private transient BucketStateManager bucketStateManager;
     private transient ValueState<RuleSnapshot> ruleSnapshotState;
+    private transient ValueState<Set<String>> anomalyFiredState;
 
-    public RuleEvaluatorFunction(String cluster) {
-        this.cluster = cluster;
-    }
+    public RuleEvaluatorFunction(String cluster) { this.cluster = cluster; }
 
     @Override
     public void open(OpenContext parameters) throws Exception {
         mapper = new ObjectMapper();
-
-        StateTtlConfig ttlConfig = StateTtlConfig.newBuilder(Duration.ofHours(48))
+        StateTtlConfig ttl = StateTtlConfig.newBuilder(Duration.ofHours(48))
                 .setUpdateType(StateTtlConfig.UpdateType.OnReadAndWrite)
                 .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
-                .cleanupInRocksdbCompactFilter(1000)
-                .build();
-
-        bucketStateManager = new BucketStateManager(getRuntimeContext(), ttlConfig);
-
-        ValueStateDescriptor<RuleSnapshot> ruleSnapshotDesc = new ValueStateDescriptor<>(
-                "rule_snapshot", RuleSnapshot.class);
-        ruleSnapshotDesc.enableTimeToLive(ttlConfig);
-        ruleSnapshotState = getRuntimeContext().getState(ruleSnapshotDesc);
+                .cleanupInRocksdbCompactFilter(1000).build();
+        bucketStateManager = new BucketStateManager(getRuntimeContext(), ttl);
+        ValueStateDescriptor<RuleSnapshot> snapDesc = new ValueStateDescriptor<>("rule_snapshot", RuleSnapshot.class);
+        snapDesc.enableTimeToLive(ttl);
+        ruleSnapshotState = getRuntimeContext().getState(snapDesc);
+        ValueStateDescriptor<Set<String>> firedDesc = new ValueStateDescriptor<>("anomaly_fired", (Class<Set<String>>) (Class<?>) HashSet.class);
+        firedDesc.enableTimeToLive(ttl);
+        anomalyFiredState = getRuntimeContext().getState(firedDesc);
     }
 
     @Override
-    public void processElement(Keyed<Event, String, String> keyedEvent, ReadOnlyContext ctx,
-            Collector<AggregationResult> out) throws Exception {
+    public void processElement(Keyed<Event, String, String> keyedEvent, ReadOnlyContext ctx, Collector<AggregationResult> out) throws Exception {
         VelocityRule rule = ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).get(keyedEvent.getId());
+        if (rule == null || !rule.isActive()) return;
 
-        if (rule == null || !rule.isActive()) {
-            return;
-        }
+        RuleSnapshot snap = ruleSnapshotState.value();
+        RuleSnapshot newSnap = RuleSnapshot.fromRule(rule, cluster);
+        if (snap == null || !snap.equals(newSnap)) ruleSnapshotState.update(newSnap);
 
-        RuleSnapshot snapshot = ruleSnapshotState.value();
-        RuleSnapshot newSnapshot = RuleSnapshot.fromRule(rule, cluster);
-        if (snapshot == null || !snapshot.equals(newSnapshot)) {
-            ruleSnapshotState.update(newSnapshot);
-        }
-
-        long eventTs = -1L;
-        if (rule.getWindowing().isUseKafkaTimestamp()) {
-            Object kTs = keyedEvent.getWrapped().getFields().get("_kafka_timestamp");
-            if (kTs != null) {
-                eventTs = ((Number) kTs).longValue();
-            }
-        } else {
-            Object rawTs = keyedEvent.getWrapped().getFields().get(rule.getWindowing().getEffectiveTimestampField());
-            if (rawTs != null) {
-                try {
-                    if ("ISO_STRING".equalsIgnoreCase(rule.getWindowing().getTimestampFormat())) {
-                        eventTs = TimeUtils.isoStringToEpochMs(String.valueOf(rawTs));
-                    } else {
-                        eventTs = Long.parseLong(String.valueOf(rawTs));
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to parse timestamp '{}' for rule {}: {}",
-                            rawTs, rule.getRuleId(), e.getMessage());
-                }
-            }
-            if (eventTs <= 0) {
-                Object fallbackTs = keyedEvent.getWrapped().getFields().get("_event_timestamp_epoch_ms");
-                if (fallbackTs != null) {
-                    eventTs = ((Number) fallbackTs).longValue();
-                }
-            }
-        }
-        if (eventTs <= 0) {
-            eventTs = ctx.timestamp() != null ? ctx.timestamp() : System.currentTimeMillis();
-        }
-
+        long eventTs = resolveEventTs(keyedEvent.getWrapped(), rule, ctx);
         bucketStateManager.addEvent(rule, keyedEvent.getWrapped(), eventTs);
 
         long slideMs = rule.getWindowing().getEffectiveSlideMs();
         long offsetMs = rule.getWindowing().getEffectiveAlignmentOffsetMs();
         long sizeMs = rule.getWindowing().getSizeMs();
-        long allowedLatenessMs = rule.getWindowing().getAllowedLatenessMs();
+        long latenessMs = rule.getWindowing().getAllowedLatenessMs();
 
         if (rule.getWindowing().isEventTime()) {
             long nextTimer = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
             ctx.timerService().registerEventTimeTimer(nextTimer);
-
-            Long currentWatermark = ctx.timerService().currentWatermark();
-            if (currentWatermark != null && currentWatermark != Long.MIN_VALUE) {
-                long eventWindowEnd = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
-                if (eventWindowEnd <= currentWatermark && eventWindowEnd + allowedLatenessMs > currentWatermark) {
-                    long lateWindowStart = eventWindowEnd - sizeMs;
-                    emitResult(rule, lateWindowStart, eventWindowEnd, allowedLatenessMs, ctx, out);
+            Long wm = ctx.timerService().currentWatermark();
+            if (wm != null && wm != Long.MIN_VALUE) {
+                long winEnd = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs) + slideMs;
+                if (winEnd <= wm && winEnd + latenessMs > wm) {
+                    emitAggLate(rule, winEnd - sizeMs, winEnd, ctx, out);
                 }
             }
         } else {
-            long currentProcessingTime = ctx.timerService().currentProcessingTime();
-            long nextTimer = TimeUtils.floorToSlide(currentProcessingTime, slideMs, offsetMs) + slideMs;
-            ctx.timerService().registerProcessingTimeTimer(nextTimer);
+            long now = ctx.timerService().currentProcessingTime();
+            ctx.timerService().registerProcessingTimeTimer(TimeUtils.floorToSlide(now, slideMs, offsetMs) + slideMs);
+        }
+
+        SinkConfig sinks = rule.getEffectiveSinks();
+        if (sinks.isAnomalySinkEnabled() || sinks.isAnomalyStoreSinkEnabled()) {
+            tryEarlyFire(keyedEvent.getWrapped(), rule, eventTs, slideMs, offsetMs, ctx);
         }
     }
 
+    private void tryEarlyFire(Event event, VelocityRule rule, long eventTs, long slideMs, long offsetMs, ReadOnlyContext ctx) throws Exception {
+        long winStart = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs);
+        String bucketKey = rule.getRuleId() + "#" + winStart;
+        Set<String> fired = anomalyFiredState.value();
+        if (fired != null && fired.contains(bucketKey)) return;
+
+        Map<String, Double> curr = bucketStateManager.computeWindowNoPrune(rule.getAggregations(), winStart, winStart + slideMs);
+        curr.remove("_raw_events_");
+        if (curr.isEmpty() || !HavingEvaluator.evaluate(rule.getHavingThresholds(), curr)) return;
+
+        String groupKey = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
+        String anomalyVal = resolveAnomalyVal(event, rule, groupKey);
+        AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), anomalyVal, TimeUtils.currentIstString());
+
+        SinkConfig sinks = rule.getEffectiveSinks();
+        if (sinks.isAnomalySinkEnabled()) ctx.output(ANOMALY_TAG, anomaly);
+        if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
+
+        if (fired == null) fired = new HashSet<>();
+        fired.add(bucketKey);
+        anomalyFiredState.update(fired);
+        log.info("[EARLY-FIRE] rule={} groupKey={} entityVal={} winStart={}", rule.getRuleId(), groupKey, anomalyVal, TimeUtils.epochMsToIstString(winStart));
+    }
+
     @Override
-    public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<AggregationResult> out)
-            throws Exception {
+    public void processBroadcastElement(VelocityRule rule, Context ctx, Collector<AggregationResult> out) throws Exception {
         if (rule == null) return;
-
         String ruleId = rule.getRuleId();
-        if (ruleId == null || ruleId.isBlank()) {
-            log.warn("Received rule with null/blank ruleId — skipping");
-            return;
-        }
-
-        if (rule.isDeleted()) {
-            log.info("Removing DELETED rule from broadcast state: id={}", ruleId);
-            ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).remove(ruleId);
-        } else {
-            log.info("Updating rule in broadcast state: id={} status={}", ruleId, rule.getStatus());
-            ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).put(ruleId, rule);
-        }
+        if (ruleId == null || ruleId.isBlank()) { log.warn("Null/blank ruleId — skipping"); return; }
+        if (rule.isDeleted()) { ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).remove(ruleId); log.info("Removed DELETED rule: {}", ruleId); }
+        else { ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).put(ruleId, rule); log.info("Updated rule: {} status={}", ruleId, rule.getStatus()); }
     }
 
     @Override
     public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {
         RuleSnapshot rule = ruleSnapshotState.value();
-        if (rule == null) {
-            return;
+        if (rule == null) return;
+
+        long winEnd   = timestamp;
+        long winStart = winEnd - rule.getWindowing().getSizeMs();
+        Map<String, Double> results = bucketStateManager.computeWindowAndPrune(rule.getAggregations(), winStart, winEnd, rule.getAllowedLatenessMs());
+        long evtCount = results.containsKey("_raw_events_") ? results.remove("_raw_events_").longValue() : 0L;
+
+        if (evtCount == 0 && results.values().stream().allMatch(v -> v == 0.0)) {
+            reRegister(rule, timestamp, ctx); return;
         }
 
-        long windowEndTs = timestamp;
-        long windowStartTs = windowEndTs - rule.getWindowing().getSizeMs();
-        long allowedLatenessMs = rule.getAllowedLatenessMs();
+        String groupKey   = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
+        String producedAt = TimeUtils.currentIstString();
 
-        List<AggregationSpec> aggregations = rule.getAggregations();
-        Map<String, Double> results = bucketStateManager.computeWindowAndPrune(aggregations, windowStartTs, windowEndTs, allowedLatenessMs);
-
-        long windowEventCount = 0L;
-        if (results.containsKey("_raw_events_")) {
-            windowEventCount = results.remove("_raw_events_").longValue();
-        }
-
-        if (windowEventCount == 0 && results.values().stream().allMatch(v -> v == 0.0)) {
-            reRegisterTimerIfNeeded(rule, timestamp, ctx);
-            return;
+        if (rule.getSinks().isAggSinkEnabled()) {
+            out.collect(new AggregationResult(
+                    rule.getRuleId(), TimeUtils.epochMsToIstString(winStart), TimeUtils.epochMsToIstString(winEnd),
+                    rule.getEntityName(), groupKey, serializeMap(results), producedAt));
         }
 
         boolean breached = HavingEvaluator.evaluate(rule.getHavingThresholds(), results);
-
-        String ruleId = rule.getRuleId();
-        String groupKey = getGroupKey(ctx.getCurrentKey(), ruleId);
-
-        AggregationResult result = new AggregationResult(
-                ruleId,
-                rule.getRuleName(),
-                rule.getSourceTopic(),
-                rule.getCluster(),
-                rule.getEntityName(),
-                groupKey,
-                TimeUtils.epochMsToIstString(windowStartTs),
-                TimeUtils.epochMsToIstString(windowEndTs),
-                rule.getWindowing().getType(),
-                rule.getWindowing().getTimeType(),
-                results,
-                breached ? 1 : 0,
-                rule.getSeverityLevel(),
-                windowEventCount,
-                TimeUtils.currentIstString());
-        out.collect(result);
-
-        if (breached) {
-            VelocityAlert alert = new VelocityAlert(
-                    ruleId,
-                    rule.getRuleName(),
-                    rule.getSeverityLevel(),
-                    rule.getPenaltyTtlSeconds(),
-                    rule.getEntityName(),
-                    groupKey,
-                    rule.getSourceTopic(),
-                    rule.getCluster(),
-                    result.getWindowStart(),
-                    result.getWindowEnd(),
-                    mapper.writeValueAsString(results),
-                    result.getEvaluatedAt());
-            ctx.output(ALERT_TAG, alert);
+        if (breached && (rule.getSinks().isAnomalySinkEnabled() || rule.getSinks().isAnomalyStoreSinkEnabled())) {
+            String bucketKey = rule.getRuleId() + "#" + winStart;
+            Set<String> fired = anomalyFiredState.value();
+            if (fired == null || !fired.contains(bucketKey)) {
+                AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), groupKey, producedAt);
+                if (rule.getSinks().isAnomalySinkEnabled()) ctx.output(ANOMALY_TAG, anomaly);
+                if (rule.getSinks().isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
+                if (fired == null) fired = new HashSet<>();
+                fired.add(bucketKey);
+                anomalyFiredState.update(fired);
+                log.info("[END-OF-WIN] Anomaly fired rule={} groupKey={}", rule.getRuleId(), groupKey);
+            }
         }
-
-        reRegisterTimerIfNeeded(rule, timestamp, ctx);
+        reRegister(rule, timestamp, ctx);
     }
 
-    private void reRegisterTimerIfNeeded(RuleSnapshot rule, long timestamp, OnTimerContext ctx) throws Exception {
-        if (bucketStateManager.isEmpty()) {
-            ruleSnapshotState.clear();
-            log.debug("State is empty for key {}, clearing snapshot and stopping timers.", ctx.getCurrentKey());
-            return;
-        }
+    private void emitAggLate(VelocityRule rule, long winStart, long winEnd, ReadOnlyContext ctx, Collector<AggregationResult> out) throws Exception {
+        if (!rule.getEffectiveSinks().isAggSinkEnabled()) return;
+        Map<String, Double> results = bucketStateManager.computeWindowNoPrune(rule.getAggregations(), winStart, winEnd);
+        results.remove("_raw_events_");
+        if (results.isEmpty()) return;
+        String groupKey = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
+        out.collect(new AggregationResult(rule.getRuleId(), TimeUtils.epochMsToIstString(winStart),
+                TimeUtils.epochMsToIstString(winEnd), rule.getEntityName(), groupKey, serializeMap(results), TimeUtils.currentIstString()));
+    }
 
+    private void reRegister(RuleSnapshot rule, long ts, OnTimerContext ctx) throws Exception {
+        if (bucketStateManager.isEmpty()) { ruleSnapshotState.clear(); return; }
         long slideMs = rule.getWindowing().getEffectiveSlideMs();
         long offsetMs = rule.getWindowing().getEffectiveAlignmentOffsetMs();
-        long nextTimer = TimeUtils.floorToSlide(timestamp, slideMs, offsetMs) + slideMs;
-        if (rule.getWindowing().isEventTime()) {
-            ctx.timerService().registerEventTimeTimer(nextTimer);
-        } else {
-            ctx.timerService().registerProcessingTimeTimer(nextTimer);
-        }
+        long next = TimeUtils.floorToSlide(ts, slideMs, offsetMs) + slideMs;
+        if (rule.getWindowing().isEventTime()) ctx.timerService().registerEventTimeTimer(next);
+        else ctx.timerService().registerProcessingTimeTimer(next);
     }
 
-    private void emitResult(VelocityRule rule, long windowStartTs, long windowEndTs, long allowedLatenessMs,
-                            ReadOnlyContext ctx, Collector<AggregationResult> out) throws Exception {
-        List<AggregationSpec> aggregations = rule.getAggregations();
-        Map<String, Double> results = bucketStateManager.computeWindowNoPrune(aggregations, windowStartTs, windowEndTs);
-
-        long windowEventCount = 0L;
-        if (results.containsKey("_raw_events_")) {
-            windowEventCount = results.remove("_raw_events_").longValue();
+    private long resolveEventTs(Event event, VelocityRule rule, ReadOnlyContext ctx) {
+        long ts = -1L;
+        if (rule.getWindowing().isUseKafkaTimestamp()) {
+            Object k = event.getFields().get("_kafka_timestamp");
+            if (k instanceof Number) ts = ((Number) k).longValue();
+        } else {
+            Object raw = event.getFields().get(rule.getWindowing().getEffectiveTimestampField());
+            if (raw != null) {
+                try { ts = "ISO_STRING".equalsIgnoreCase(rule.getWindowing().getTimestampFormat())
+                        ? TimeUtils.isoStringToEpochMs(String.valueOf(raw)) : Long.parseLong(String.valueOf(raw));
+                } catch (Exception e) { log.warn("TS parse failed '{}' rule={}: {}", raw, rule.getRuleId(), e.getMessage()); }
+            }
+            if (ts <= 0) { Object fb = event.getFields().get("_event_timestamp_epoch_ms"); if (fb instanceof Number) ts = ((Number) fb).longValue(); }
         }
-        if (windowEventCount == 0) return;
+        if (ts <= 0) ts = ctx.timestamp() != null ? ctx.timestamp() : System.currentTimeMillis();
+        return ts;
+    }
 
-        boolean breached = HavingEvaluator.evaluate(rule.getHavingThresholds(), results);
-
-        String ruleId = rule.getRuleId();
-        String groupKey = getGroupKey(ctx.getCurrentKey(), ruleId);
-
-        AggregationResult result = new AggregationResult(
-                ruleId,
-                rule.getRuleName(),
-                rule.getSourceTopic(),
-                rule.getSourceCluster(),
-                rule.getEntityName(),
-                groupKey,
-                TimeUtils.epochMsToIstString(windowStartTs),
-                TimeUtils.epochMsToIstString(windowEndTs),
-                rule.getWindowing().getType(),
-                rule.getWindowing().getTimeType(),
-                results,
-                breached ? 1 : 0,
-                rule.getSeverityLevel(),
-                windowEventCount,
-                TimeUtils.currentIstString());
-        out.collect(result);
-
-        if (breached) {
-            VelocityAlert alert = new VelocityAlert(
-                    ruleId,
-                    rule.getRuleName(),
-                    rule.getSeverityLevel(),
-                    rule.getPenaltyTtlSeconds(),
-                    rule.getEntityName(),
-                    groupKey,
-                    rule.getSourceTopic(),
-                    rule.getSourceCluster(),
-                    result.getWindowStart(),
-                    result.getWindowEnd(),
-                    mapper.writeValueAsString(results),
-                    result.getEvaluatedAt());
-            ctx.output(ALERT_TAG, alert);
+    private String resolveAnomalyVal(Event event, VelocityRule rule, String groupKey) {
+        String field = rule.getAnomalyEntityField();
+        if (field != null && !field.isBlank()) {
+            Object v = FieldExtractor.extractObject(event, field);
+            if (v != null) return String.valueOf(v);
+            log.debug("anomaly_entity_field '{}' missing — fallback to groupKey", field);
         }
+        return groupKey;
     }
 
     private String getGroupKey(String compositeKey, String ruleId) {
-        if (compositeKey != null && compositeKey.startsWith(ruleId + "|")) {
-            return compositeKey.substring(ruleId.length() + 1);
-        }
+        if (compositeKey != null && compositeKey.startsWith(ruleId + "|")) return compositeKey.substring(ruleId.length() + 1);
         return compositeKey;
+    }
+
+    private String serializeMap(Map<String, Double> map) {
+        try { if (mapper == null) mapper = new ObjectMapper(); return mapper.writeValueAsString(map); }
+        catch (Exception e) { log.error("Map serialize error: {}", e.getMessage()); return "{}"; }
     }
 }

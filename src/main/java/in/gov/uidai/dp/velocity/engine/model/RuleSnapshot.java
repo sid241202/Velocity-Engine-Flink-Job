@@ -11,16 +11,15 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class RuleSnapshot implements Serializable {
-
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
     private String ruleId;
-    private String ruleName;
-    private String severityLevel;
+    private String entityName;
+    private String anomalyEntityField;
     private int penaltyTtlSeconds;
     private String sourceTopic;
     private String cluster;
-    private String entityName;
+    private SinkConfig sinks;
     private WindowingConfig windowing;
     private List<AggregationSpec> aggregations;
     private HavingThresholds havingThresholds;
@@ -29,12 +28,12 @@ public class RuleSnapshot implements Serializable {
     public static RuleSnapshot fromRule(VelocityRule rule, String cluster) {
         return new RuleSnapshot(
                 rule.getRuleId(),
-                rule.getRuleName(),
-                rule.getSeverityLevel(),
+                rule.getEntityName(),
+                rule.getAnomalyEntityField(),
                 rule.getPenaltyTtlSeconds(),
                 rule.getSourceTopic(),
                 cluster,
-                rule.getGrouping() != null ? rule.getGrouping().getEntityName() : null,
+                rule.getEffectiveSinks(),
                 rule.getWindowing(),
                 rule.getAggregations(),
                 rule.getHavingThresholds(),

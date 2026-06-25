@@ -14,10 +14,12 @@ import java.util.List;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class GroupingConfig implements Serializable {
-    private static final long serialVersionUID = 1L;
-
+    private static final long serialVersionUID = 2L;
     private List<String> keys;
 
     @JsonProperty("entity_name")
     private String entityName;
+
+    @JsonProperty("anomaly_entity_field")
+    private String anomalyEntityField;
 }

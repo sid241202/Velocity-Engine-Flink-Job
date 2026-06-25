@@ -9,13 +9,9 @@ import java.io.Serializable;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class AggregationResult implements Serializable {
-    private static final long serialVersionUID = 2L;
+public class AnomalyEvent implements Serializable {
+    private static final long serialVersionUID = 1L;
     private String id;
-    private String windowStart;
-    private String windowEnd;
-    private String entityName;
     private String entityValue;
-    private String aggResult;
     private String producedAt;
 }

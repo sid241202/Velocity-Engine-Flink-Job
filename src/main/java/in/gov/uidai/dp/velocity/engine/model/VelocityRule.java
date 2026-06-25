@@ -14,8 +14,7 @@ import java.util.List;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class VelocityRule implements Serializable {
-
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
     @JsonProperty("rule_metadata")
     private RuleMetadata ruleMetadata;
@@ -31,6 +30,8 @@ public class VelocityRule implements Serializable {
     @JsonProperty("having_thresholds")
     private HavingThresholds havingThresholds;
 
+    private SinkConfig sinks;
+
     public String getRuleId()        { return ruleMetadata != null ? ruleMetadata.getRuleId()        : null; }
     public String getRuleName()      { return ruleMetadata != null ? ruleMetadata.getRuleName()      : null; }
     public String getStatus()        { return ruleMetadata != null ? ruleMetadata.getStatus()        : null; }
@@ -41,7 +42,12 @@ public class VelocityRule implements Serializable {
     public boolean isPaused()  { return "PAUSED".equalsIgnoreCase(getStatus()); }
     public boolean isDeleted() { return "DELETED".equalsIgnoreCase(getStatus()); }
 
-    public String getSourceTopic()   { return executionRouting != null ? executionRouting.getTargetSourceTopic() : null; }
-    public String getSourceCluster() { return executionRouting != null ? executionRouting.getTargetCluster()     : null; }
-    public String getEntityName()    { return grouping != null ? grouping.getEntityName() : null; }
+    public String getSourceTopic()        { return executionRouting != null ? executionRouting.getTargetSourceTopic() : null; }
+    public String getSourceCluster()      { return executionRouting != null ? executionRouting.getTargetCluster()     : null; }
+    public String getEntityName()         { return grouping != null ? grouping.getEntityName()         : null; }
+    public String getAnomalyEntityField() { return grouping != null ? grouping.getAnomalyEntityField() : null; }
+
+    public SinkConfig getEffectiveSinks() {
+        return sinks != null ? sinks : SinkConfig.allEnabled();
+    }
 }

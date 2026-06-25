@@ -22,9 +22,7 @@ public final class AuthDemoConfig {
     public static final long   CH_FLUSH_INTERVAL_MS = 5000;
 
     // ==================== REDIS ====================
-    // REDIS_MODE: STANDALONE (single JedisPool) or CLUSTER (JedisCluster)
     public static final String REDIS_MODE           = "STANDALONE";
-    // Comma-separated host:port. For cluster: "10.10.1.1:6379,10.10.1.2:6379,..."
     public static final String REDIS_HOSTS          = "127.0.0.1:6379";
     public static final String REDIS_PASSWORD       = "";
     public static final int    REDIS_MAX_TOTAL      = 16;
@@ -36,9 +34,6 @@ public final class AuthDemoConfig {
 
     // ==================== CHECKPOINT ====================
     public static final String CHECKPOINT_DIR = "s3a://prd-bi-data-platform-configs/flink/checkpoints/velocity-auth/";
-
-    // ==================== CLUSTER ====================
-    public static final String CLUSTER_NAME = "auth-cluster";
 
     // ==================== TUNING ====================
     public static final long MAX_WATERMARK_LAG_MS = 60000;

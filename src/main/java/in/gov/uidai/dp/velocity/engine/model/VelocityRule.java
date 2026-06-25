@@ -43,7 +43,6 @@ public class VelocityRule implements Serializable {
     public boolean isDeleted() { return "DELETED".equalsIgnoreCase(getStatus()); }
 
     public String getSourceTopic()        { return executionRouting != null ? executionRouting.getTargetSourceTopic() : null; }
-    public String getSourceCluster()      { return executionRouting != null ? executionRouting.getTargetCluster()     : null; }
     public String getEntityName()         { return grouping != null ? grouping.getEntityName()         : null; }
     public String getAnomalyEntityField() { return grouping != null ? grouping.getAnomalyEntityField() : null; }
 

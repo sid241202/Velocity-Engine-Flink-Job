@@ -34,72 +34,96 @@ import java.time.Duration;
 @Slf4j
 public class AuthDemoPipeline {
 
-    public void buildAndExecute() throws Exception {
-        Configuration conf = new Configuration();
-        conf.setString("state.backend.rocksdb.options-factory", "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
-        conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-        env.setParallelism(9);
-        env.enableCheckpointing(60_000L, CheckpointingMode.EXACTLY_ONCE);
-        env.getCheckpointConfig().setCheckpointTimeout(600_000L);
-        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10_000L);
-        env.getCheckpointConfig().setExternalizedCheckpointRetention(ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
-        env.getCheckpointConfig().enableUnalignedCheckpoints();
+        public void buildAndExecute() throws Exception {
+                Configuration conf = new Configuration();
+                conf.setString("state.backend.rocksdb.options-factory",
+                                "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
+                conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);
+                StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
+                env.setParallelism(9);
+                env.enableCheckpointing(60_000L, CheckpointingMode.EXACTLY_ONCE);
+                env.getCheckpointConfig().setCheckpointTimeout(600_000L);
+                env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10_000L);
+                env.getCheckpointConfig().setExternalizedCheckpointRetention(
+                                ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
+                env.getCheckpointConfig().enableUnalignedCheckpoints();
 
-        KafkaSource<Event> kafkaSource = KafkaSource.<Event>builder()
-                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
-                .setTopics(AuthDemoConfig.AUTH_TOPIC)
-                .setGroupId(AuthDemoConfig.AUTH_CONSUMER_GROUP)
-                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST))
-                .setDeserializer(new EventDeserializer(AuthDemoConfig.AUTH_TOPIC, AuthDemoConfig.CLUSTER_NAME, AuthDemoConfig.EVENT_TIMESTAMP_FIELD, AuthDemoConfig.EVENT_TIMESTAMP_FORMAT))
-                .build();
+                KafkaSource<Event> kafkaSource = KafkaSource.<Event>builder()
+                                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
+                                .setTopics(AuthDemoConfig.AUTH_TOPIC)
+                                .setGroupId(AuthDemoConfig.AUTH_CONSUMER_GROUP)
+                                .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST))
+                                .setDeserializer(new EventDeserializer(AuthDemoConfig.AUTH_TOPIC,
+                                                AuthDemoConfig.EVENT_TIMESTAMP_FIELD,
+                                                AuthDemoConfig.EVENT_TIMESTAMP_FORMAT))
+                                .build();
 
-        SingleOutputStreamOperator<Event> deduplicatedEvents = env
-                .fromSource(kafkaSource, WatermarkStrategy.<Event>forBoundedOutOfOrderness(Duration.ofMillis(AuthDemoConfig.MAX_WATERMARK_LAG_MS)).withIdleness(Duration.ofSeconds(30)), "Kafka-Auth-Events")
-                .uid("kafka-auth-events")
-                .keyBy(event -> { Object a = in.gov.uidai.dp.velocity.engine.utils.FieldExtractor.extractObject(event, "_data.authCode"); return a != null ? a.toString() : ""; })
-                .process(new AuthDeduplicationFunction()).name("AuthDeduplicator").uid("auth-deduplicator");
+                SingleOutputStreamOperator<Event> deduplicatedEvents = env
+                                .fromSource(kafkaSource, WatermarkStrategy
+                                                .<Event>forBoundedOutOfOrderness(
+                                                                Duration.ofMillis(AuthDemoConfig.MAX_WATERMARK_LAG_MS))
+                                                .withIdleness(Duration.ofSeconds(30)), "Kafka-Auth-Events")
+                                .uid("kafka-auth-events")
+                                .keyBy(event -> {
+                                        Object a = in.gov.uidai.dp.velocity.engine.utils.FieldExtractor
+                                                        .extractObject(event, "_data.authCode");
+                                        return a != null ? a.toString() : "";
+                                })
+                                .process(new AuthDeduplicationFunction()).name("AuthDeduplicator")
+                                .uid("auth-deduplicator");
 
-        BroadcastStream<VelocityRule> broadcastRules = env
-                .fromSource(KafkaSource.<VelocityRule>builder().setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP).setTopics(AuthDemoConfig.RULES_TOPIC).setGroupId(AuthDemoConfig.RULES_CONSUMER_GROUP).setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST)).setDeserializer(new RuleDeserializer()).build(),
-                        WatermarkStrategy.<VelocityRule>forMonotonousTimestamps().withIdleness(Duration.ofSeconds(30)), "Kafka-Rules")
-                .uid("kafka-rules").setParallelism(1)
-                .broadcast(DynamicKeyFunction.RULE_STATE_DESC);
+                BroadcastStream<VelocityRule> broadcastRules = env
+                                .fromSource(KafkaSource.<VelocityRule>builder()
+                                                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
+                                                .setTopics(AuthDemoConfig.RULES_TOPIC)
+                                                .setGroupId(AuthDemoConfig.RULES_CONSUMER_GROUP)
+                                                .setStartingOffsets(OffsetsInitializer
+                                                                .committedOffsets(OffsetResetStrategy.LATEST))
+                                                .setDeserializer(new RuleDeserializer()).build(),
+                                                WatermarkStrategy.<VelocityRule>forMonotonousTimestamps()
+                                                                .withIdleness(Duration.ofSeconds(30)),
+                                                "Kafka-Rules")
+                                .uid("kafka-rules").setParallelism(1)
+                                .broadcast(DynamicKeyFunction.RULE_STATE_DESC);
 
-        SingleOutputStreamOperator<AggregationResult> results = deduplicatedEvents
-                .connect(broadcastRules)
-                .process(new DynamicKeyFunction(AuthDemoConfig.CLUSTER_NAME)).name("DynamicKeyFunction").uid("dynamic-key-function")
-                .keyBy(keyed -> keyed.getId() + "|" + keyed.getKey())
-                .connect(broadcastRules)
-                .process(new RuleEvaluatorFunction(AuthDemoConfig.CLUSTER_NAME)).name("RuleEvaluatorFunction").uid("rule-evaluator-function");
+                SingleOutputStreamOperator<AggregationResult> results = deduplicatedEvents
+                                .connect(broadcastRules)
+                                .process(new DynamicKeyFunction()).name("DynamicKeyFunction")
+                                .uid("dynamic-key-function")
+                                .keyBy(keyed -> keyed.getId() + "|" + keyed.getKey())
+                                .connect(broadcastRules)
+                                .process(new RuleEvaluatorFunction())
+                                .name("RuleEvaluatorFunction").uid("rule-evaluator-function");
 
-        // Agg Kafka Sink
-        results.sinkTo(KafkaSink.<AggregationResult>builder()
-                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
-                .setRecordSerializer(KafkaRecordSerializationSchema.<AggregationResult>builder()
-                        .setTopic(AuthDemoConfig.RESULTS_TOPIC)
-                        .setKeySerializationSchema(r -> r.getId() != null ? r.getId().getBytes() : new byte[0])
-                        .setValueSerializationSchema(new ResultSerializationSchema()).build())
-                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
-                .name("AggKafkaSink").uid("agg-kafka-sink").setParallelism(9);
+                // Agg Kafka Sink
+                results.sinkTo(KafkaSink.<AggregationResult>builder()
+                                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
+                                .setRecordSerializer(KafkaRecordSerializationSchema.<AggregationResult>builder()
+                                                .setTopic(AuthDemoConfig.RESULTS_TOPIC)
+                                                .setKeySerializationSchema(r -> r.getId() != null ? r.getId().getBytes()
+                                                                : new byte[0])
+                                                .setValueSerializationSchema(new ResultSerializationSchema()).build())
+                                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
+                                .name("AggKafkaSink").uid("agg-kafka-sink").setParallelism(9);
 
-        // Anomaly Kafka Sink
-        DataStream<AnomalyEvent> anomalyStream = results.getSideOutput(RuleEvaluatorFunction.ANOMALY_TAG);
-        anomalyStream.sinkTo(KafkaSink.<AnomalyEvent>builder()
-                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
-                .setRecordSerializer(KafkaRecordSerializationSchema.<AnomalyEvent>builder()
-                        .setTopic(AuthDemoConfig.ANOMALY_TOPIC)
-                        .setKeySerializationSchema(e -> e.getId() != null ? e.getId().getBytes() : new byte[0])
-                        .setValueSerializationSchema(new AnomalySerializationSchema()).build())
-                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
-                .name("AnomalyKafkaSink").uid("anomaly-kafka-sink").setParallelism(9);
+                // Anomaly Kafka Sink
+                DataStream<AnomalyEvent> anomalyStream = results.getSideOutput(RuleEvaluatorFunction.ANOMALY_TAG);
+                anomalyStream.sinkTo(KafkaSink.<AnomalyEvent>builder()
+                                .setBootstrapServers(AuthDemoConfig.KAFKA_BOOTSTRAP)
+                                .setRecordSerializer(KafkaRecordSerializationSchema.<AnomalyEvent>builder()
+                                                .setTopic(AuthDemoConfig.ANOMALY_TOPIC)
+                                                .setKeySerializationSchema(e -> e.getId() != null ? e.getId().getBytes()
+                                                                : new byte[0])
+                                                .setValueSerializationSchema(new AnomalySerializationSchema()).build())
+                                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
+                                .name("AnomalyKafkaSink").uid("anomaly-kafka-sink").setParallelism(9);
 
-        // Redis Anomaly Store Sink
-        results.getSideOutput(RuleEvaluatorFunction.REDIS_TAG)
-                .sinkTo(new RedisSink(RedisConfig.fromConfig(), 3600))
-                .name("RedisAnomalyStoreSink").uid("redis-anomaly-store-sink").setParallelism(3);
+                // Redis Anomaly Store Sink
+                results.getSideOutput(RuleEvaluatorFunction.REDIS_TAG)
+                                .sinkTo(new RedisSink(RedisConfig.fromConfig(), 3600))
+                                .name("RedisAnomalyStoreSink").uid("redis-anomaly-store-sink").setParallelism(3);
 
-        log.info("Executing UIDAI Velocity Engine — 3-sink: AggKafka + AnomalyKafka + Redis");
-        env.execute("UIDAI Velocity Engine Auth Demo");
-    }
+                log.info("Executing UIDAI Velocity Engine — 3-sink: AggKafka + AnomalyKafka + Redis");
+                env.execute("UIDAI Velocity Engine Auth Demo");
+        }
 }

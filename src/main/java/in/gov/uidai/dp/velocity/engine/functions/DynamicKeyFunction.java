@@ -29,11 +29,7 @@ public class DynamicKeyFunction extends BroadcastProcessFunction<Event, Velocity
                     TypeInformation.of(new TypeHint<VelocityRule>() {})
             );
 
-    private final String cluster;
-
-    public DynamicKeyFunction(String cluster) {
-        this.cluster = cluster;
-    }
+    public DynamicKeyFunction() {}
 
     @Override
     public void processElement(Event event, ReadOnlyContext ctx, Collector<Keyed<Event, String, String>> out) throws Exception {

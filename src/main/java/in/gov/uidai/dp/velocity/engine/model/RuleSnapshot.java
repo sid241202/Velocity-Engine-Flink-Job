@@ -18,21 +18,19 @@ public class RuleSnapshot implements Serializable {
     private String anomalyEntityField;
     private int penaltyTtlSeconds;
     private String sourceTopic;
-    private String cluster;
     private SinkConfig sinks;
     private WindowingConfig windowing;
     private List<AggregationSpec> aggregations;
     private HavingThresholds havingThresholds;
     private long allowedLatenessMs;
 
-    public static RuleSnapshot fromRule(VelocityRule rule, String cluster) {
+    public static RuleSnapshot fromRule(VelocityRule rule) {
         return new RuleSnapshot(
                 rule.getRuleId(),
                 rule.getEntityName(),
                 rule.getAnomalyEntityField(),
                 rule.getPenaltyTtlSeconds(),
                 rule.getSourceTopic(),
-                cluster,
                 rule.getEffectiveSinks(),
                 rule.getWindowing(),
                 rule.getAggregations(),

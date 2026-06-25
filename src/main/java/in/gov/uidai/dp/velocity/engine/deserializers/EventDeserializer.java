@@ -17,16 +17,14 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
     private static final long serialVersionUID = 1L;
 
     private final String sourceTopic;
-    private final String cluster;
     private final String eventTimestampField;
     private final String eventTimestampFormat;
 
     private transient ObjectMapper objectMapper;
 
-    public EventDeserializer(String sourceTopic, String cluster,
+    public EventDeserializer(String sourceTopic,
             String eventTimestampField, String eventTimestampFormat) {
         this.sourceTopic = sourceTopic;
-        this.cluster = cluster;
         this.eventTimestampField = eventTimestampField;
         this.eventTimestampFormat = eventTimestampFormat;
     }
@@ -45,7 +43,6 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
             Event event = objectMapper.readValue(record.value(), Event.class);
 
             event.put("_source_topic", sourceTopic);
-            event.put("_cluster", cluster);
             event.put("_kafka_partition", record.partition());
             event.put("_kafka_offset", record.offset());
             event.put("_kafka_timestamp", record.timestamp());

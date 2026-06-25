@@ -29,13 +29,12 @@ public class RuleEvaluatorFunction
     public static final OutputTag<AnomalyEvent> ANOMALY_TAG = new OutputTag<AnomalyEvent>("anomaly-events") {};
     public static final OutputTag<AnomalyEvent> REDIS_TAG   = new OutputTag<AnomalyEvent>("anomaly-redis") {};
 
-    private final String cluster;
     private transient ObjectMapper mapper;
     private transient BucketStateManager bucketStateManager;
     private transient ValueState<RuleSnapshot> ruleSnapshotState;
     private transient ValueState<Set<String>> anomalyFiredState;
 
-    public RuleEvaluatorFunction(String cluster) { this.cluster = cluster; }
+    public RuleEvaluatorFunction() {}
 
     @Override
     public void open(OpenContext parameters) throws Exception {
@@ -59,7 +58,7 @@ public class RuleEvaluatorFunction
         if (rule == null || !rule.isActive()) return;
 
         RuleSnapshot snap = ruleSnapshotState.value();
-        RuleSnapshot newSnap = RuleSnapshot.fromRule(rule, cluster);
+        RuleSnapshot newSnap = RuleSnapshot.fromRule(rule);
         if (snap == null || !snap.equals(newSnap)) ruleSnapshotState.update(newSnap);
 
         long eventTs = resolveEventTs(keyedEvent.getWrapped(), rule, ctx);

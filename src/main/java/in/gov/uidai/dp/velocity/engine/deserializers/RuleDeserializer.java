@@ -40,9 +40,8 @@ public class RuleDeserializer implements KafkaRecordDeserializationSchema<Veloci
                 return;
             }
             if (rule.getExecutionRouting() == null
-                    || rule.getSourceCluster() == null
                     || rule.getSourceTopic() == null) {
-                log.warn("Rule '{}' missing execution routing or source topic/cluster — dropping",
+                log.warn("Rule '{}' missing execution routing or source topic — dropping",
                         rule.getRuleId());
                 return;
             }

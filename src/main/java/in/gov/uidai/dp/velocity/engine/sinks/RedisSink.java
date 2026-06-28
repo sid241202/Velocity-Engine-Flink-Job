@@ -108,7 +108,7 @@ public class RedisSink implements Sink<AnomalyEvent> {
                             if (effectiveTtl > 0) j.expire(key, effectiveTtl);
                         }
                     }
-                    log.debug("Redis SADD key={} val={} ttl={}s", key, val, effectiveTtl);
+                    log.info("Redis SADD key={} val={} ttl={}s", key, val, effectiveTtl);
                     return;
                 } catch (Exception e) {
                     if (i == 2) log.error("RedisSink failed after 3 attempts key={}: {}", event.getId(), e.getMessage());

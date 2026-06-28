@@ -127,7 +127,7 @@ public final class FilterEvaluator {
                 }
             };
         } catch (Exception e) {
-            log.debug("Filter evaluation error for field '{}' op '{}': {}", cond.getField(), operator, e.getMessage());
+            log.info("Filter evaluation error for field '{}' op '{}': {}", cond.getField(), operator, e.getMessage());
             return false;
         }
     }
@@ -151,7 +151,7 @@ public final class FilterEvaluator {
             Object rawCond  = cond.getValue();
 
             if (rawField == null || rawCond == null) {
-                log.debug("Date filter: field or condition value is null for field '{}' — returning false", cond.getField());
+                log.info("Date filter: field or condition value is null for field '{}' — returning false", cond.getField());
                 return false;
             }
 
@@ -174,7 +174,7 @@ public final class FilterEvaluator {
             };
         } catch (Exception e) {
             // Fault-tolerant: any unexpected error → false, never crash
-            log.debug("Date filter evaluation error for field '{}' op '{}': {}", cond.getField(), opUpper, e.getMessage());
+            log.info("Date filter evaluation error for field '{}' op '{}': {}", cond.getField(), opUpper, e.getMessage());
             return false;
         }
     }
@@ -202,7 +202,7 @@ public final class FilterEvaluator {
                             .toInstant()
                             .toEpochMilli();
                 } catch (Exception e2) {
-                    log.debug("ISO_STRING parse failed for '{}' value='{}': {}", label, s, e2.getMessage());
+                    log.info("ISO_STRING parse failed for '{}' value='{}': {}", label, s, e2.getMessage());
                     return -1L;
                 }
             }
@@ -212,7 +212,7 @@ public final class FilterEvaluator {
                 if (raw instanceof Number) return ((Number) raw).longValue();
                 return Long.parseLong(s);
             } catch (NumberFormatException e) {
-                log.debug("EPOCH_MILLIS parse failed for '{}' value='{}': {}", label, s, e.getMessage());
+                log.info("EPOCH_MILLIS parse failed for '{}' value='{}': {}", label, s, e.getMessage());
                 return -1L;
             }
         }

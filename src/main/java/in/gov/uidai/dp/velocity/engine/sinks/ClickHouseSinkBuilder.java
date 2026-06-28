@@ -84,7 +84,7 @@ public class ClickHouseSinkBuilder {
         @Override
         public void write(AggregationResult value, Context context) {
             buffer.add(value);
-            log.debug("Buffered AggregationResult for rule={}, groupKey={}, buffer size={}",
+            log.info("Buffered AggregationResult for rule={}, groupKey={}, buffer size={}",
                     value.getId(), value.getEntityValue(), buffer.size());
 
             long now = System.currentTimeMillis();

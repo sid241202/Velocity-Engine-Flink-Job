@@ -3,11 +3,11 @@ package in.gov.uidai.dp.velocity.engine.config;
 public final class AuthDemoConfig {
 
     // ==================== KAFKA ====================
-    public static final String KAFKA_BOOTSTRAP = "10.10.107.67:9092,10.10.106.91:9092,10.10.107.133:9092,10.10.107.103:9092,10.10.107.112:9092,10.10.107.177:9092,10.10.107.105:9092";
+    public static final String KAFKA_BOOTSTRAP = "10.10.73.105:9092,10.10.74.200:9092,10.10.74.86:9092";
     public static final String AUTH_TOPIC             = "BI.AUTH.AUTH_TXN.UNION.V1";
-    public static final String AUTH_CONSUMER_GROUP    = "STROT.APPLICATION.VELOCITY.ENGINE";
+    public static final String AUTH_CONSUMER_GROUP    = "STROT.APPLICATION.VELOCITY_ENGINE";
     public static final String RULES_TOPIC            = "DE.AUTH.VELOCITY_ENGINE.RULES";
-    public static final String RULES_CONSUMER_GROUP   = "STROT.APPLICATION.VELOCITY.ENGINE";
+    public static final String RULES_CONSUMER_GROUP   = "STROT.APPLICATION.VELOCITY_ENGINE";
     public static final String RESULTS_TOPIC          = "DE.AUTH.VELOCITY_ENGINE.RESULTS";
     public static final String ANOMALY_TOPIC          = "DE.AUTH.VELOCITY_ENGINE.ANOMALIES";
 
@@ -23,7 +23,7 @@ public final class AuthDemoConfig {
 
     // ==================== REDIS ====================
     public static final String REDIS_MODE               = "STANDALONE";
-    public static final String REDIS_HOSTS              = "127.0.0.1:6379";
+    public static final String REDIS_HOSTS              = "10.10.79.27:32612";
     public static final String REDIS_PASSWORD           = "";
     public static final int    REDIS_MAX_TOTAL          = 16;
     public static final int    REDIS_MAX_IDLE           = 8;

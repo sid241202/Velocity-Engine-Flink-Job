@@ -27,7 +27,7 @@ public final class FieldExtractor {
         try {
             return Double.parseDouble(String.valueOf(val));
         } catch (NumberFormatException e) {
-            log.debug("Cannot parse '{}' as double from field '{}'", val, fieldPath);
+            log.info("Cannot parse '{}' as double from field '{}'", val, fieldPath);
             return null;
         }
     }

@@ -205,7 +205,7 @@ public class RuleEvaluatorFunction
         if (field != null && !field.isBlank()) {
             Object v = FieldExtractor.extractObject(event, field);
             if (v != null) return String.valueOf(v);
-            log.debug("anomaly_entity_field '{}' missing — fallback to groupKey", field);
+            log.info("anomaly_entity_field '{}' missing — fallback to groupKey", field);
         }
         return groupKey;
     }

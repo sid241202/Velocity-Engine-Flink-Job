@@ -66,7 +66,7 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
     private long extractEpochMs(Event event, long kafkaTimestamp) {
         Object rawTs = event.getFields().get(eventTimestampField);
         if (rawTs == null) {
-            log.debug("Timestamp field '{}' not found in event, using Kafka timestamp", eventTimestampField);
+            log.info("Timestamp field '{}' not found in event, using Kafka timestamp", eventTimestampField);
             return kafkaTimestamp;
         }
 

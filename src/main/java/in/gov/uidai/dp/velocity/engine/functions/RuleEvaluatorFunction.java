@@ -16,7 +16,6 @@ import org.apache.flink.util.OutputTag;
 
 import java.time.Duration;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,7 +23,7 @@ import java.util.Set;
 public class RuleEvaluatorFunction
         extends KeyedBroadcastProcessFunction<String, Keyed<Event, String, String>, VelocityRule, AggregationResult> {
 
-    private static final long serialVersionUID = 2L;
+    private static final long serialVersionUID = 3L;
 
     public static final OutputTag<AnomalyEvent> ANOMALY_TAG = new OutputTag<AnomalyEvent>("anomaly-events") {};
     public static final OutputTag<AnomalyEvent> REDIS_TAG   = new OutputTag<AnomalyEvent>("anomaly-redis") {};
@@ -57,6 +56,14 @@ public class RuleEvaluatorFunction
         VelocityRule rule = ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).get(keyedEvent.getId());
         if (rule == null || !rule.isActive()) return;
 
+        // ── NO-WINDOWING (Stateless Real-Time) Path ───────────────────────────
+        // Zero state access, zero timer registration. Pure in-memory evaluation.
+        if (rule.getWindowing() == null || rule.getWindowing().isNoWindowing()) {
+            handleStatelessEvent(keyedEvent.getWrapped(), rule, ctx);
+            return;
+        }
+
+        // ── WINDOWED Path ─────────────────────────────────────────────────────
         RuleSnapshot snap = ruleSnapshotState.value();
         RuleSnapshot newSnap = RuleSnapshot.fromRule(rule);
         if (snap == null || !snap.equals(newSnap)) ruleSnapshotState.update(newSnap);
@@ -90,6 +97,25 @@ public class RuleEvaluatorFunction
         }
     }
 
+    // ── Stateless handler for NO-WINDOWING rules ──────────────────────────────
+    // Called instead of the windowed path. Touches zero Flink state backends.
+    private void handleStatelessEvent(Event event, VelocityRule rule, ReadOnlyContext ctx) {
+        String groupKey   = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
+        String anomalyVal = resolveAnomalyVal(event, rule, groupKey);
+
+        boolean shouldFire = HavingEvaluator.evaluateRaw(rule.getHavingThresholds(), event.getFields());
+        if (!shouldFire) return;
+
+        String producedAt = TimeUtils.currentIstString();
+        AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), anomalyVal, producedAt, rule.getPenaltyTtlSeconds());
+
+        SinkConfig sinks = rule.getEffectiveSinks();
+        if (sinks.isAnomalySinkEnabled())      ctx.output(ANOMALY_TAG, anomaly);
+        if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
+
+        log.info("[STATELESS] rule={} groupKey={} entityVal={}", rule.getRuleId(), groupKey, anomalyVal);
+    }
+
     private void tryEarlyFire(Event event, VelocityRule rule, long eventTs, long slideMs, long offsetMs, ReadOnlyContext ctx) throws Exception {
         long winStart = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs);
         String bucketKey = rule.getRuleId() + "#" + winStart;
@@ -105,7 +131,7 @@ public class RuleEvaluatorFunction
         AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), anomalyVal, TimeUtils.currentIstString(), rule.getPenaltyTtlSeconds());
 
         SinkConfig sinks = rule.getEffectiveSinks();
-        if (sinks.isAnomalySinkEnabled()) ctx.output(ANOMALY_TAG, anomaly);
+        if (sinks.isAnomalySinkEnabled())      ctx.output(ANOMALY_TAG, anomaly);
         if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
 
         if (fired == null) fired = new HashSet<>();
@@ -127,11 +153,11 @@ public class RuleEvaluatorFunction
     public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {
         RuleSnapshot rule = ruleSnapshotState.value();
         if (rule == null) {
-            log.warn("[TIMER] key={} ts={} — ruleSnapshotState is null (state TTL may have expired after checkpoint restore). " +
-                     "Window result dropped. Re-broadcast the rule to re-activate.",
-                     ctx.getCurrentKey(), timestamp);
+            log.warn("[TIMER] key={} ts={} — ruleSnapshotState is null. Window result dropped.", ctx.getCurrentKey(), timestamp);
             return;
         }
+        // No-windowing rules never register timers, but guard defensively.
+        if (rule.getWindowing() == null || rule.getWindowing().isNoWindowing()) return;
 
         long winEnd   = timestamp;
         long winStart = winEnd - rule.getWindowing().getSizeMs();
@@ -157,7 +183,7 @@ public class RuleEvaluatorFunction
             Set<String> fired = anomalyFiredState.value();
             if (fired == null || !fired.contains(bucketKey)) {
                 AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), groupKey, producedAt, rule.getPenaltyTtlSeconds());
-                if (rule.getSinks().isAnomalySinkEnabled()) ctx.output(ANOMALY_TAG, anomaly);
+                if (rule.getSinks().isAnomalySinkEnabled())      ctx.output(ANOMALY_TAG, anomaly);
                 if (rule.getSinks().isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
                 if (fired == null) fired = new HashSet<>();
                 fired.add(bucketKey);
@@ -166,25 +192,17 @@ public class RuleEvaluatorFunction
             }
         }
 
-        // Prune stale bucketKeys from anomalyFiredState to prevent unbounded growth.
-        // Buckets older than (winStart - allowedLatenessMs) can never fire again.
+        // Prune stale anomalyFiredState buckets
         long pruneBeforeMs = winStart - rule.getAllowedLatenessMs();
         Set<String> firedForPrune = anomalyFiredState.value();
         if (firedForPrune != null && !firedForPrune.isEmpty()) {
             String rulePrefix = rule.getRuleId() + "#";
             boolean pruneChanged = firedForPrune.removeIf(bk -> {
                 if (!bk.startsWith(rulePrefix)) return false;
-                try {
-                    long bkTs = Long.parseLong(bk.substring(rulePrefix.length()));
-                    return bkTs < pruneBeforeMs;
-                } catch (NumberFormatException ignore) {
-                    return false;
-                }
+                try { return Long.parseLong(bk.substring(rulePrefix.length())) < pruneBeforeMs; }
+                catch (NumberFormatException ignore) { return false; }
             });
-            if (pruneChanged) {
-                anomalyFiredState.update(firedForPrune.isEmpty() ? null : firedForPrune);
-                log.debug("[PRUNE] key={} pruned stale anomalyFired buckets", ctx.getCurrentKey());
-            }
+            if (pruneChanged) anomalyFiredState.update(firedForPrune.isEmpty() ? null : firedForPrune);
         }
 
         reRegister(rule, timestamp, ctx);
@@ -202,7 +220,7 @@ public class RuleEvaluatorFunction
 
     private void reRegister(RuleSnapshot rule, long ts, OnTimerContext ctx) throws Exception {
         if (bucketStateManager.isEmpty()) { ruleSnapshotState.clear(); return; }
-        long slideMs = rule.getWindowing().getEffectiveSlideMs();
+        long slideMs  = rule.getWindowing().getEffectiveSlideMs();
         long offsetMs = rule.getWindowing().getEffectiveAlignmentOffsetMs();
         long next = TimeUtils.floorToSlide(ts, slideMs, offsetMs) + slideMs;
         if (rule.getWindowing().isEventTime()) ctx.timerService().registerEventTimeTimer(next);

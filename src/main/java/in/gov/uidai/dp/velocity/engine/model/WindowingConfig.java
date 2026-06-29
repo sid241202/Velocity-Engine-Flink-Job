@@ -66,4 +66,8 @@ public class WindowingConfig implements Serializable {
         long normalizedOffset = (alignmentOffsetMs - istOffsetMs) % slide;
         return normalizedOffset < 0 ? normalizedOffset + slide : normalizedOffset;
     }
+
+    public boolean isNoWindowing() {
+        return "NONE".equalsIgnoreCase(type);
+    }
 }

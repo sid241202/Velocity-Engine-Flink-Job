@@ -10,8 +10,11 @@ import java.time.format.DateTimeParseException;
 public final class TimeUtils {
 
     public static final ZoneId INDIA_ZONE = ZoneId.of("Asia/Kolkata");
+    // Format: "YYYY-MM-DD HH:MM:SS" in IST — no milliseconds, space-separated.
+    // This is consumed by both the Go backend (parseIST) and the React frontend (istUtils.js).
+    // Avoid ISO-8601 'T' separator or milliseconds to prevent cross-browser Date parsing issues.
     public static final DateTimeFormatter IST_FMT = DateTimeFormatter
-            .ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
+            .ofPattern("yyyy-MM-dd HH:mm:ss")
             .withZone(INDIA_ZONE);
 
     private TimeUtils() {}

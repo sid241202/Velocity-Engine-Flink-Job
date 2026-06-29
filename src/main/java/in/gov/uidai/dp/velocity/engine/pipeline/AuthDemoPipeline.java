@@ -40,7 +40,7 @@ public class AuthDemoPipeline {
                                 "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
                 conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);
                 StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-                env.setParallelism(9);
+                env.setParallelism(1);
                 env.enableCheckpointing(60_000L, CheckpointingMode.EXACTLY_ONCE);
                 env.getCheckpointConfig().setCheckpointTimeout(600_000L);
                 env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10_000L);
@@ -104,7 +104,7 @@ public class AuthDemoPipeline {
                                                                 : new byte[0])
                                                 .setValueSerializationSchema(new ResultSerializationSchema()).build())
                                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
-                                .name("AggKafkaSink").uid("agg-kafka-sink").setParallelism(9);
+                                .name("AggKafkaSink").uid("agg-kafka-sink").setParallelism(1);
 
                 // Anomaly Kafka Sink
                 DataStream<AnomalyEvent> anomalyStream = results.getSideOutput(RuleEvaluatorFunction.ANOMALY_TAG);
@@ -116,12 +116,12 @@ public class AuthDemoPipeline {
                                                                 : new byte[0])
                                                 .setValueSerializationSchema(new AnomalySerializationSchema()).build())
                                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
-                                .name("AnomalyKafkaSink").uid("anomaly-kafka-sink").setParallelism(9);
+                                .name("AnomalyKafkaSink").uid("anomaly-kafka-sink").setParallelism(1);
 
                 // Redis Anomaly Store Sink
                 results.getSideOutput(RuleEvaluatorFunction.REDIS_TAG)
                                 .sinkTo(new RedisSink(RedisConfig.fromConfig(), AuthDemoConfig.REDIS_DEFAULT_TTL_SECONDS))
-                                .name("RedisAnomalyStoreSink").uid("redis-anomaly-store-sink").setParallelism(3);
+                                .name("RedisAnomalyStoreSink").uid("redis-anomaly-store-sink").setParallelism(1);
 
                 log.info("Executing UIDAI Velocity Engine — 3-sink: AggKafka + AnomalyKafka + Redis");
                 env.execute("UIDAI Velocity Engine Auth Demo");

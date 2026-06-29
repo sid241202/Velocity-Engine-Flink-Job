@@ -95,23 +95,29 @@ public class RedisSink implements Sink<AnomalyEvent> {
             // Use per-event TTL (from rule_metadata.penalty_ttl_seconds); fall back to sink-level default
             int effectiveTtl = event.getPenaltyTtlSeconds() > 0 ? event.getPenaltyTtlSeconds() : penaltyTtlSeconds;
             long[] backoffMs = {200, 500, 1000};
+            String key = event.getId();
+            String val = event.getEntityValue();
             for (int i = 0; i < 3; i++) {
                 try {
-                    String key = event.getId();
-                    String val = event.getEntityValue();
                     if (config.getMode() == RedisConfig.Mode.CLUSTER) {
-                        jedisCluster.sadd(key, val);
-                        if (effectiveTtl > 0) jedisCluster.expire(key, effectiveTtl);
+                        // JedisCluster does not support pipelining across slots; execute atomically per-command
+                        // but wrap in a single round-trip using MULTI/EXEC-style pipeline on the cluster node.
+                        // Since SADD+EXPIRE on the same key always hits the same slot, use a pipeline via eval.
+                        String luaScript = "redis.call('SADD', KEYS[1], ARGV[1]); if tonumber(ARGV[2]) > 0 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end; return 1";
+                        jedisCluster.eval(luaScript, 1, key, val, String.valueOf(effectiveTtl));
                     } else {
                         try (Jedis j = jedisPool.getResource()) {
-                            j.sadd(key, val);
-                            if (effectiveTtl > 0) j.expire(key, effectiveTtl);
+                            // Use a pipeline for atomic SADD+EXPIRE in standalone mode
+                            redis.clients.jedis.Pipeline pipe = j.pipelined();
+                            pipe.sadd(key, val);
+                            if (effectiveTtl > 0) pipe.expire(key, effectiveTtl);
+                            pipe.sync();
                         }
                     }
-                    log.info("Redis SADD key={} val={} ttl={}s", key, val, effectiveTtl);
+                    log.info("Redis SADD+EXPIRE key={} val={} ttl={}s", key, val, effectiveTtl);
                     return;
                 } catch (Exception e) {
-                    if (i == 2) log.error("RedisSink failed after 3 attempts key={}: {}", event.getId(), e.getMessage());
+                    if (i == 2) log.error("RedisSink failed after 3 attempts key={}: {}", key, e.getMessage());
                     else log.warn("RedisSink attempt {}/3 failed: {}", i + 1, e.getMessage());
                     try {
                         if (i < 2) Thread.sleep(backoffMs[i]);

@@ -50,8 +50,8 @@ public final class FilterEvaluator {
             return evaluateCondition(event, filterRoot);
         }
 
-        log.warn("Unknown filter node type: {}", filterRoot.getType());
-        return true;
+        log.warn("Unknown filter node type '{}' — denying by default (fail-closed)", filterRoot.getType());
+        return false;
     }
 
     // ─── Condition dispatch ───────────────────────────────────────────────────
@@ -59,8 +59,8 @@ public final class FilterEvaluator {
     private static boolean evaluateCondition(Event event, FilterNode cond) {
         String operator = cond.getOperator();
         if (operator == null || operator.isBlank()) {
-            log.warn("Filter condition has null/blank operator for field '{}' — skipping", cond.getField());
-            return true;
+            log.warn("Filter condition has null/blank operator for field '{}' — denying by default (fail-closed)", cond.getField());
+            return false;
         }
 
         String opUpper = operator.toUpperCase();
@@ -122,8 +122,8 @@ public final class FilterEvaluator {
                 case "STARTS_WITH"        -> strOf(eventVal).toLowerCase().startsWith(strOf(condVal).toLowerCase());
                 case "ENDS_WITH"          -> strOf(eventVal).toLowerCase().endsWith(strOf(condVal).toLowerCase());
                 default -> {
-                    log.warn("Unknown filter operator '{}' — treating as pass", operator);
-                    yield true;
+                    log.warn("Unknown filter operator '{}' on field '{}' — denying by default (fail-closed)", operator, cond.getField());
+                    yield false;
                 }
             };
         } catch (Exception e) {

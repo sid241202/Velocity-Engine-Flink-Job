@@ -126,7 +126,12 @@ public class RuleEvaluatorFunction
     @Override
     public void onTimer(long timestamp, OnTimerContext ctx, Collector<AggregationResult> out) throws Exception {
         RuleSnapshot rule = ruleSnapshotState.value();
-        if (rule == null) return;
+        if (rule == null) {
+            log.warn("[TIMER] key={} ts={} — ruleSnapshotState is null (state TTL may have expired after checkpoint restore). " +
+                     "Window result dropped. Re-broadcast the rule to re-activate.",
+                     ctx.getCurrentKey(), timestamp);
+            return;
+        }
 
         long winEnd   = timestamp;
         long winStart = winEnd - rule.getWindowing().getSizeMs();
@@ -160,6 +165,28 @@ public class RuleEvaluatorFunction
                 log.info("[END-OF-WIN] Anomaly fired rule={} groupKey={}", rule.getRuleId(), groupKey);
             }
         }
+
+        // Prune stale bucketKeys from anomalyFiredState to prevent unbounded growth.
+        // Buckets older than (winStart - allowedLatenessMs) can never fire again.
+        long pruneBeforeMs = winStart - rule.getAllowedLatenessMs();
+        Set<String> firedForPrune = anomalyFiredState.value();
+        if (firedForPrune != null && !firedForPrune.isEmpty()) {
+            String rulePrefix = rule.getRuleId() + "#";
+            boolean pruneChanged = firedForPrune.removeIf(bk -> {
+                if (!bk.startsWith(rulePrefix)) return false;
+                try {
+                    long bkTs = Long.parseLong(bk.substring(rulePrefix.length()));
+                    return bkTs < pruneBeforeMs;
+                } catch (NumberFormatException ignore) {
+                    return false;
+                }
+            });
+            if (pruneChanged) {
+                anomalyFiredState.update(firedForPrune.isEmpty() ? null : firedForPrune);
+                log.debug("[PRUNE] key={} pruned stale anomalyFired buckets", ctx.getCurrentKey());
+            }
+        }
+
         reRegister(rule, timestamp, ctx);
     }
 

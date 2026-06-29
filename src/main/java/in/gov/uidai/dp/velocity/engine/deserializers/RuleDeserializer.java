@@ -52,8 +52,9 @@ public class RuleDeserializer implements KafkaRecordDeserializationSchema<Veloci
                     log.warn("Rule '{}' has no grouping keys — dropping", rule.getRuleId());
                     return;
                 }
-                if (rule.getAggregations() == null || rule.getAggregations().isEmpty()) {
-                    log.warn("Rule '{}' has no aggregations — dropping", rule.getRuleId());
+                boolean isNoWindowing = rule.getWindowing() != null && rule.getWindowing().isNoWindowing();
+                if (!isNoWindowing && (rule.getAggregations() == null || rule.getAggregations().isEmpty())) {
+                    log.warn("Rule '{}' has no aggregations (windowed mode requires them) — dropping", rule.getRuleId());
                     return;
                 }
                 if (rule.getWindowing() == null) {

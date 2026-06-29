@@ -20,7 +20,7 @@ public class ResultSerializationSchema implements SerializationSchema<Aggregatio
             return mapper.writeValueAsBytes(result);
         } catch (Exception e) {
             log.error("Failed to serialize AggregationResult id={}: {}", result.getId(), e.getMessage());
-            return new byte[0];
+            return null; // Kafka sinks skip null records
         }
     }
 }

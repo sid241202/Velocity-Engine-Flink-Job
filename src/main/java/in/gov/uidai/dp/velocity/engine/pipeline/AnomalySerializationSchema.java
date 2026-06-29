@@ -20,7 +20,7 @@ public class AnomalySerializationSchema implements SerializationSchema<AnomalyEv
             return mapper.writeValueAsBytes(event);
         } catch (Exception e) {
             log.error("Failed to serialize AnomalyEvent id={}: {}", event.getId(), e.getMessage());
-            return new byte[0];
+            return null; // Kafka sinks skip null records
         }
     }
 }

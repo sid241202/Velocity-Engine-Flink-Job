@@ -40,10 +40,16 @@ public class AuthDemoPipeline {
                                 "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
                 conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);
                 StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-                env.setParallelism(1);
+                // NOTE: Do NOT set global parallelism=1 here — that forces 80M+/day events
+                // through a single task thread, which is a fatal throughput bottleneck.
+                // Parallelism is configured in flink-conf.yaml / k8s deployment.
+                // The rules source is deliberately kept at parallelism=1 (broadcast constraint).
                 env.enableCheckpointing(60_000L, CheckpointingMode.EXACTLY_ONCE);
                 env.getCheckpointConfig().setCheckpointTimeout(600_000L);
                 env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10_000L);
+                // Tolerate up to 3 consecutive checkpoint failures before failing the job.
+                // Without this, a single transient checkpoint failure brings down the pipeline.
+                env.getCheckpointConfig().setTolerableCheckpointFailureNumber(3);
                 env.getCheckpointConfig().setExternalizedCheckpointRetention(
                                 ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);
                 env.getCheckpointConfig().enableUnalignedCheckpoints();
@@ -104,7 +110,7 @@ public class AuthDemoPipeline {
                                                                 : new byte[0])
                                                 .setValueSerializationSchema(new ResultSerializationSchema()).build())
                                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
-                                .name("AggKafkaSink").uid("agg-kafka-sink").setParallelism(1);
+                                .name("AggKafkaSink").uid("agg-kafka-sink");
 
                 // Anomaly Kafka Sink
                 DataStream<AnomalyEvent> anomalyStream = results.getSideOutput(RuleEvaluatorFunction.ANOMALY_TAG);
@@ -116,12 +122,12 @@ public class AuthDemoPipeline {
                                                                 : new byte[0])
                                                 .setValueSerializationSchema(new AnomalySerializationSchema()).build())
                                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
-                                .name("AnomalyKafkaSink").uid("anomaly-kafka-sink").setParallelism(1);
+                                .name("AnomalyKafkaSink").uid("anomaly-kafka-sink");
 
                 // Redis Anomaly Store Sink
                 results.getSideOutput(RuleEvaluatorFunction.REDIS_TAG)
                                 .sinkTo(new RedisSink(RedisConfig.fromConfig(), AuthDemoConfig.REDIS_DEFAULT_TTL_SECONDS))
-                                .name("RedisAnomalyStoreSink").uid("redis-anomaly-store-sink").setParallelism(1);
+                                .name("RedisAnomalyStoreSink").uid("redis-anomaly-store-sink");
 
                 log.info("Executing UIDAI Velocity Engine — 3-sink: AggKafka + AnomalyKafka + Redis");
                 env.execute("UIDAI Velocity Engine Auth Demo");

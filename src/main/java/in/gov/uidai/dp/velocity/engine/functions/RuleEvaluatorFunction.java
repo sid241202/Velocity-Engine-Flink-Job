@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 
 import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.state.*;
+import org.apache.flink.api.common.typeinfo.TypeHint;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.streaming.api.functions.co.KeyedBroadcastProcessFunction;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
@@ -31,7 +33,7 @@ public class RuleEvaluatorFunction
     private transient ObjectMapper mapper;
     private transient BucketStateManager bucketStateManager;
     private transient ValueState<RuleSnapshot> ruleSnapshotState;
-    private transient ValueState<Set<String>> anomalyFiredState;
+    private transient ValueState<HashSet<String>> anomalyFiredState;
 
     public RuleEvaluatorFunction() {}
 
@@ -46,7 +48,14 @@ public class RuleEvaluatorFunction
         ValueStateDescriptor<RuleSnapshot> snapDesc = new ValueStateDescriptor<>("rule_snapshot", RuleSnapshot.class);
         snapDesc.enableTimeToLive(ttl);
         ruleSnapshotState = getRuntimeContext().getState(snapDesc);
-        ValueStateDescriptor<Set<String>> firedDesc = new ValueStateDescriptor<>("anomaly_fired", (Class<Set<String>>) (Class<?>) HashSet.class);
+        // Use TypeHint to give Flink's type system a concrete parameterized type for the HashSet.
+        // The previous (Class<Set<String>>)(Class<?>)HashSet.class unchecked cast forces a Kryo
+        // fallback which is fragile on state schema evolution. TypeInformation.of(TypeHint)
+        // generates a proper Flink TypeDescriptor enabling PojoSerializer or at minimum a
+        // well-registered Kryo type.
+        ValueStateDescriptor<HashSet<String>> firedDesc = new ValueStateDescriptor<>(
+                "anomaly_fired",
+                TypeInformation.of(new TypeHint<HashSet<String>>() {}));
         firedDesc.enableTimeToLive(ttl);
         anomalyFiredState = getRuntimeContext().getState(firedDesc);
     }

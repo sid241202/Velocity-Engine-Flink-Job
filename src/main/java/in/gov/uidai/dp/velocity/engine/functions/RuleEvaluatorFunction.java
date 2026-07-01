@@ -128,7 +128,7 @@ public class RuleEvaluatorFunction
     private void tryEarlyFire(Event event, VelocityRule rule, long eventTs, long slideMs, long offsetMs, ReadOnlyContext ctx) throws Exception {
         long winStart = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs);
         String bucketKey = rule.getRuleId() + "#" + winStart;
-        Set<String> fired = anomalyFiredState.value();
+        HashSet<String> fired = anomalyFiredState.value();
         if (fired != null && fired.contains(bucketKey)) return;
 
         Map<String, Double> curr = bucketStateManager.computeWindowNoPrune(rule.getAggregations(), winStart, winStart + slideMs);
@@ -180,16 +180,26 @@ public class RuleEvaluatorFunction
         String groupKey   = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
         String producedAt = TimeUtils.currentIstString();
 
-        if (rule.getSinks().isAggSinkEnabled()) {
-            out.collect(new AggregationResult(
-                    rule.getRuleId(), TimeUtils.epochMsToIstString(winStart), TimeUtils.epochMsToIstString(winEnd),
-                    rule.getEntityName(), groupKey, serializeMap(results), producedAt));
-        }
-
         boolean breached = HavingEvaluator.evaluate(rule.getHavingThresholds(), results);
+
+        if (rule.getSinks().isAggSinkEnabled()) {
+            // groupKey is passed both as groupKey and entityValue fields for maximum compatibility.
+            // thresholdBreached is set here — this is the canonical source of truth for the
+            // frontend and backend: a row from Kafka carries its own breach flag.
+            out.collect(new AggregationResult(
+                    rule.getRuleId(),
+                    TimeUtils.epochMsToIstString(winStart),
+                    TimeUtils.epochMsToIstString(winEnd),
+                    rule.getEntityName(),
+                    groupKey,        // new groupKey field
+                    groupKey,        // entityValue kept for backward compat
+                    serializeMap(results),
+                    producedAt,
+                    breached));      // thresholdBreached — the critical missing field
+        }
         if (breached && (rule.getSinks().isAnomalySinkEnabled() || rule.getSinks().isAnomalyStoreSinkEnabled())) {
             String bucketKey = rule.getRuleId() + "#" + winStart;
-            Set<String> fired = anomalyFiredState.value();
+            HashSet<String> fired = anomalyFiredState.value();
             if (fired == null || !fired.contains(bucketKey)) {
                 AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), groupKey, producedAt, rule.getPenaltyTtlSeconds());
                 if (rule.getSinks().isAnomalySinkEnabled())      ctx.output(ANOMALY_TAG, anomaly);
@@ -203,7 +213,7 @@ public class RuleEvaluatorFunction
 
         // Prune stale anomalyFiredState buckets
         long pruneBeforeMs = winStart - rule.getAllowedLatenessMs();
-        Set<String> firedForPrune = anomalyFiredState.value();
+        HashSet<String> firedForPrune = anomalyFiredState.value();
         if (firedForPrune != null && !firedForPrune.isEmpty()) {
             String rulePrefix = rule.getRuleId() + "#";
             boolean pruneChanged = firedForPrune.removeIf(bk -> {
@@ -223,8 +233,17 @@ public class RuleEvaluatorFunction
         results.remove("_raw_events_");
         if (results.isEmpty()) return;
         String groupKey = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
-        out.collect(new AggregationResult(rule.getRuleId(), TimeUtils.epochMsToIstString(winStart),
-                TimeUtils.epochMsToIstString(winEnd), rule.getEntityName(), groupKey, serializeMap(results), TimeUtils.currentIstString()));
+        boolean breached = HavingEvaluator.evaluate(rule.getHavingThresholds(), results);
+        out.collect(new AggregationResult(
+                rule.getRuleId(),
+                TimeUtils.epochMsToIstString(winStart),
+                TimeUtils.epochMsToIstString(winEnd),
+                rule.getEntityName(),
+                groupKey,
+                groupKey,
+                serializeMap(results),
+                TimeUtils.currentIstString(),
+                breached));
     }
 
     private void reRegister(RuleSnapshot rule, long ts, OnTimerContext ctx) throws Exception {

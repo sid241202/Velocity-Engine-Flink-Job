@@ -40,10 +40,7 @@ public class AuthDemoPipeline {
                                 "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
                 conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);
                 StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-                // NOTE: Do NOT set global parallelism=1 here — that forces 80M+/day events
-                // through a single task thread, which is a fatal throughput bottleneck.
-                // Parallelism is configured in flink-conf.yaml / k8s deployment.
-                // The rules source is deliberately kept at parallelism=1 (broadcast constraint).
+                env.setParallelism(1);
                 env.enableCheckpointing(60_000L, CheckpointingMode.EXACTLY_ONCE);
                 env.getCheckpointConfig().setCheckpointTimeout(600_000L);
                 env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10_000L);

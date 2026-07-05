@@ -34,6 +34,8 @@ import java.time.Duration;
 @Slf4j
 public class AuthDemoPipeline {
 
+        //TODO: Clickhouse DDL to be tried and tested
+
         public void buildAndExecute() throws Exception {
                 Configuration conf = new Configuration();
                 conf.setString("state.backend.rocksdb.options-factory",
@@ -44,8 +46,6 @@ public class AuthDemoPipeline {
                 env.enableCheckpointing(60_000L, CheckpointingMode.EXACTLY_ONCE);
                 env.getCheckpointConfig().setCheckpointTimeout(600_000L);
                 env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10_000L);
-                // Tolerate up to 3 consecutive checkpoint failures before failing the job.
-                // Without this, a single transient checkpoint failure brings down the pipeline.
                 env.getCheckpointConfig().setTolerableCheckpointFailureNumber(3);
                 env.getCheckpointConfig().setExternalizedCheckpointRetention(
                                 ExternalizedCheckpointRetention.RETAIN_ON_CANCELLATION);

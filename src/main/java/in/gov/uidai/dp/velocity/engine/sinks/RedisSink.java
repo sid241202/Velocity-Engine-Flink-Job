@@ -95,26 +95,45 @@ public class RedisSink implements Sink<AnomalyEvent> {
             // Use per-event TTL (from rule_metadata.penalty_ttl_seconds); fall back to sink-level default
             int effectiveTtl = event.getPenaltyTtlSeconds() > 0 ? event.getPenaltyTtlSeconds() : penaltyTtlSeconds;
             long[] backoffMs = {200, 500, 1000};
-            String key = event.getId();
-            String val = event.getEntityValue();
+
+            // ── Penalty key model ────────────────────────────────────────────────
+            // One key PER (rule, entity): "penalty:{ruleId}:{entityValue}".
+            //
+            // The previous model SADD'd every flagged entity into a single set
+            // keyed by ruleId and reset EXPIRE on the whole set on every write.
+            // That meant (a) individual entity penalties could never expire
+            // independently, and (b) under continuous firing the set's TTL was
+            // perpetually bumped, so the key never expired and the set grew
+            // unbounded (every entity ever flagged). Per-entity keys give each
+            // penalty its own independent, self-expiring TTL and bound memory.
+            //
+            // SETEX is a single atomic command (set value + expiry), so no
+            // pipeline/Lua round-trip is needed and it works identically in
+            // standalone and cluster mode.
+            //
+            // READER CONTRACT: consumers must check EXISTS penalty:{ruleId}:{entity}
+            // (previously SISMEMBER penalty:{ruleId} {entity}). This is a
+            // deliberate, breaking change to the penalty-store key scheme.
+            String key = "penalty:" + event.getId() + ":" + event.getEntityValue();
+            String val = event.getProducedAt() != null ? event.getProducedAt() : "1";
             for (int i = 0; i < 3; i++) {
                 try {
                     if (config.getMode() == RedisConfig.Mode.CLUSTER) {
-                        // JedisCluster does not support pipelining across slots; execute atomically per-command
-                        // but wrap in a single round-trip using MULTI/EXEC-style pipeline on the cluster node.
-                        // Since SADD+EXPIRE on the same key always hits the same slot, use a pipeline via eval.
-                        String luaScript = "redis.call('SADD', KEYS[1], ARGV[1]); if tonumber(ARGV[2]) > 0 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end; return 1";
-                        jedisCluster.eval(luaScript, 1, key, val, String.valueOf(effectiveTtl));
+                        if (effectiveTtl > 0) {
+                            jedisCluster.setex(key, effectiveTtl, val);
+                        } else {
+                            jedisCluster.set(key, val); // no TTL configured — persist until overwritten
+                        }
                     } else {
                         try (Jedis j = jedisPool.getResource()) {
-                            // Use a pipeline for atomic SADD+EXPIRE in standalone mode
-                            redis.clients.jedis.Pipeline pipe = j.pipelined();
-                            pipe.sadd(key, val);
-                            if (effectiveTtl > 0) pipe.expire(key, effectiveTtl);
-                            pipe.sync();
+                            if (effectiveTtl > 0) {
+                                j.setex(key, effectiveTtl, val);
+                            } else {
+                                j.set(key, val);
+                            }
                         }
                     }
-                    log.info("Redis SADD+EXPIRE key={} val={} ttl={}s", key, val, effectiveTtl);
+                    log.info("Redis SETEX key={} ttl={}s", key, effectiveTtl);
                     return;
                 } catch (Exception e) {
                     if (i == 2) log.error("RedisSink failed after 3 attempts key={}: {}", key, e.getMessage());

@@ -45,13 +45,18 @@ public class DynamicKeyFunction extends BroadcastProcessFunction<Event, Velocity
 
             if (!rule.isActive()) continue;
 
-            // Topic filter: only route events to rules configured for this source topic.
-            // A null/empty sourceTopic on the rule acts as a wildcard (matches all topics).
-//            String ruleSourceTopic = rule.getSourceTopic();
-//            if (ruleSourceTopic != null && !ruleSourceTopic.isEmpty()
-//                    && !eventSourceTopic.equalsIgnoreCase(ruleSourceTopic)) {
-//                continue;
-//            }
+            // Topic filter: only route events to rules configured for this source
+            // topic. A null/empty target_source_topic on the rule acts as a
+            // wildcard (matches all topics), so rules created before this filter
+            // was enabled — or intentionally cross-topic rules — keep working.
+            // Without this, every event was evaluated against every active rule
+            // regardless of the rule's configured source topic (the field existed
+            // in the DTO/UI but had no runtime effect).
+            String ruleSourceTopic = rule.getSourceTopic();
+            if (ruleSourceTopic != null && !ruleSourceTopic.isEmpty()
+                    && !eventSourceTopic.equalsIgnoreCase(ruleSourceTopic)) {
+                continue;
+            }
 
             if (FilterEvaluator.evaluate(event, rule.getFilters())) {
                 String groupKey = KeysExtractor.getKey(rule.getGrouping().getKeys(), event);

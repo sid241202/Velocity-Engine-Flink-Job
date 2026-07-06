@@ -40,6 +40,8 @@ public final class AuthDemoConfig {
     // ==================== TUNING ====================
     public static final long MAX_WATERMARK_LAG_MS = 60000;
     public static final long DEDUP_TTL_MINUTES    = 15;
+    /** Minimum wall-clock gap between early-fire (partial) AggregationResult emissions per group key. */
+    public static final long EARLY_FIRE_INTERVAL_MS = 3000;
 
     // ==================== EVENT TIMESTAMP ====================
     public static final String EVENT_TIMESTAMP_FIELD  = "_event_timestamp";

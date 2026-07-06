@@ -1,6 +1,7 @@
 package in.gov.uidai.dp.velocity.engine.functions;
 
 import in.gov.uidai.dp.velocity.engine.aggregation.BucketStateManager;
+import in.gov.uidai.dp.velocity.engine.config.AuthDemoConfig;
 import in.gov.uidai.dp.velocity.engine.model.*;
 import in.gov.uidai.dp.velocity.engine.utils.FieldExtractor;
 import in.gov.uidai.dp.velocity.engine.utils.HavingEvaluator;
@@ -34,6 +35,7 @@ public class RuleEvaluatorFunction
     private transient BucketStateManager bucketStateManager;
     private transient ValueState<RuleSnapshot> ruleSnapshotState;
     private transient ValueState<HashSet<String>> anomalyFiredState;
+    private transient ValueState<Long> aggEarlyFireState;
 
     public RuleEvaluatorFunction() {}
 
@@ -58,6 +60,10 @@ public class RuleEvaluatorFunction
                 TypeInformation.of(new TypeHint<HashSet<String>>() {}));
         firedDesc.enableTimeToLive(ttl);
         anomalyFiredState = getRuntimeContext().getState(firedDesc);
+
+        ValueStateDescriptor<Long> aggEarlyFireDesc = new ValueStateDescriptor<>("agg_early_fire_ts", Long.class);
+        aggEarlyFireDesc.enableTimeToLive(ttl);
+        aggEarlyFireState = getRuntimeContext().getState(aggEarlyFireDesc);
     }
 
     @Override
@@ -104,6 +110,9 @@ public class RuleEvaluatorFunction
         if (sinks.isAnomalySinkEnabled() || sinks.isAnomalyStoreSinkEnabled()) {
             tryEarlyFire(keyedEvent.getWrapped(), rule, eventTs, slideMs, offsetMs, ctx);
         }
+        if (sinks.isAggSinkEnabled()) {
+            tryEarlyFireAgg(rule, eventTs, slideMs, offsetMs, ctx, out);
+        }
     }
 
     // ── Stateless handler for NO-WINDOWING rules ──────────────────────────────
@@ -147,6 +156,44 @@ public class RuleEvaluatorFunction
         fired.add(bucketKey);
         anomalyFiredState.update(fired);
         log.info("[EARLY-FIRE] rule={} groupKey={} entityVal={} winStart={}", rule.getRuleId(), groupKey, anomalyVal, TimeUtils.epochMsToIstString(winStart));
+    }
+
+    // ── Early-fire AggregationResult (partial, live-preview) ──────────────────
+    // Piggybacks on the per-event hook instead of a separate periodic timer:
+    // it can only run when a new event just landed in bucketStateManager, so
+    // (unlike a wall-clock timer) it never re-emits an unchanged snapshot for
+    // an idle key, and there's no extra timer chain to register/leak/clean up.
+    // Throttled to at most one partial emission per group key per
+    // EARLY_FIRE_INTERVAL_MS so hot keys don't flood Kafka/WS between real
+    // window closes; sparse keys naturally get one partial update per event
+    // since they rarely hit the throttle.
+    private void tryEarlyFireAgg(VelocityRule rule, long eventTs, long slideMs, long offsetMs, ReadOnlyContext ctx, Collector<AggregationResult> out) throws Exception {
+        long now = ctx.timerService().currentProcessingTime();
+        Long lastEmit = aggEarlyFireState.value();
+        if (lastEmit != null && now - lastEmit < AuthDemoConfig.EARLY_FIRE_INTERVAL_MS) return;
+
+        long winStart = TimeUtils.floorToSlide(eventTs, slideMs, offsetMs);
+        long winEnd = winStart + slideMs;
+        Map<String, Double> curr = bucketStateManager.computeWindowNoPrune(rule.getAggregations(), winStart, winEnd);
+        long evtCount = curr.containsKey("_raw_events_") ? curr.remove("_raw_events_").longValue() : 0L;
+        if (evtCount == 0) return;
+
+        String groupKey = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
+        boolean breached = HavingEvaluator.evaluate(rule.getHavingThresholds(), curr);
+
+        out.collect(new AggregationResult(
+                rule.getRuleId(),
+                TimeUtils.epochMsToIstString(winStart),
+                TimeUtils.epochMsToIstString(winEnd),
+                rule.getEntityName(),
+                groupKey,
+                groupKey,
+                serializeMap(curr),
+                TimeUtils.currentIstString(),
+                breached,
+                false)); // isFinal = false — partial/live-preview row
+
+        aggEarlyFireState.update(now);
     }
 
     @Override
@@ -195,7 +242,8 @@ public class RuleEvaluatorFunction
                     groupKey,        // entityValue kept for backward compat
                     serializeMap(results),
                     producedAt,
-                    breached));      // thresholdBreached — the critical missing field
+                    breached,        // thresholdBreached — the critical missing field
+                    true));          // isFinal — authoritative end-of-window row, state pruned
         }
         if (breached && (rule.getSinks().isAnomalySinkEnabled() || rule.getSinks().isAnomalyStoreSinkEnabled())) {
             String bucketKey = rule.getRuleId() + "#" + winStart;
@@ -243,7 +291,8 @@ public class RuleEvaluatorFunction
                 groupKey,
                 serializeMap(results),
                 TimeUtils.currentIstString(),
-                breached));
+                breached,
+                false)); // isFinal = false — lateness catch-up snapshot; state not pruned, real onTimer still fires
     }
 
     private void reRegister(RuleSnapshot rule, long ts, OnTimerContext ctx) throws Exception {

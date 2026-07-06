@@ -20,4 +20,6 @@ public class AggregationResult implements Serializable {
     private String aggResult;
     private String producedAt;
     private boolean thresholdBreached;
+    /** true = authoritative end-of-window row (state pruned); false = early-fire preview, superseded later. */
+    private boolean isFinal;
 }

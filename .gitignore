@@ -13,3 +13,4 @@ compile_log.txt
 cp.txt
 *.bat
 .vscode/
+.claude/

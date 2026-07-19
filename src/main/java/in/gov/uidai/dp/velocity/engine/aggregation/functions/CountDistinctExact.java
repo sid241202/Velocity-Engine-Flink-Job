@@ -97,7 +97,11 @@ public class CountDistinctExact {
             if (bucketTs < pruneBefore) {
                 iter.remove();
                 expiredBuckets.add(bucketKey);
-            } else if (bucketTs < windowEndTs) {
+            } else if (bucketTs >= windowStartTs && bucketTs < windowEndTs) {
+                // Lower bound matters here even though the prune threshold is
+                // pruneBefore (windowStartTs - allowedLatenessMs): a bucket kept
+                // alive by the lateness grace period belongs to the PREVIOUS
+                // window, not this one.
                 globalSet.add(entry.getKey().substring(sep + DELIMITER.length()));
             }
         }

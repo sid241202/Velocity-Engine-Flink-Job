@@ -46,7 +46,10 @@ public class CountDistinctHll {
                 long bucketTs = TimeUtils.extractBucketTs(entry.getKey());
                 if (bucketTs < windowStartTs - allowedLatenessMs) {
                     iter.remove();
-                } else if (bucketTs < windowEndTs) {
+                } else if (bucketTs >= windowStartTs && bucketTs < windowEndTs) {
+                    // Lower bound matters here even though the prune threshold is
+                    // windowStartTs - allowedLatenessMs: a bucket kept alive by the
+                    // lateness grace period belongs to the PREVIOUS window, not this one.
                     HyperLogLog hll = HyperLogLog.Builder.build(entry.getValue());
                     globalHll.addAll(hll);
                 }

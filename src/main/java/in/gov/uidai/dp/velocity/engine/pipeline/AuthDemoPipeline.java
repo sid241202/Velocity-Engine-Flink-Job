@@ -21,6 +21,7 @@ import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.configuration.StateBackendOptions;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.core.execution.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.BroadcastStream;
@@ -38,6 +39,14 @@ public class AuthDemoPipeline {
 
         public void buildAndExecute() throws Exception {
                 Configuration conf = new Configuration();
+                // Explicit, not just implied by the options-factory line below: that config
+                // key is a no-op unless RocksDB is actually the active state backend, and
+                // nothing else in this job (or bundled in its resources) ever set that — it
+                // was silently depending on the deploying cluster's flink-conf.yaml alone.
+                // Given the per-bucket MapState/TTL design throughout this job is built
+                // assuming RocksDB (see BucketStateManager, CountDistinctExact's cap
+                // reasoning), pin it here so the job is correct standalone.
+                conf.set(StateBackendOptions.STATE_BACKEND, "rocksdb");
                 conf.setString("state.backend.rocksdb.options-factory",
                                 "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
                 conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);

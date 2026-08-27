@@ -212,6 +212,23 @@ public class RuleEvaluatorFunction
             log.warn("[TIMER] key={} ts={} — ruleSnapshotState is null. Window result dropped.", ctx.getCurrentKey(), timestamp);
             return;
         }
+        // A timer registered while this rule was ACTIVE can still fire after the
+        // rule is PAUSED or DELETED — processElement's isActive() gate only stops
+        // NEW events from reaching this key, it doesn't cancel a timer already
+        // scheduled for an in-progress window. ruleSnapshotState is a point-in-time
+        // copy taken from the last active event, so it can't tell us that on its
+        // own; check the live broadcast state instead. Without this, a user who
+        // pauses or deletes a rule could still see it emit a final result — or
+        // fire an anomaly — for whichever window was already open, and (via
+        // reRegister below) keep doing so on every subsequent slide until the
+        // bucket state happens to drain via TTL/pruning, well after they believed
+        // the rule had stopped.
+        VelocityRule liveRule = ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).get(rule.getRuleId());
+        if (liveRule == null || !liveRule.isActive()) {
+            log.info("[TIMER] key={} rule={} — rule no longer active (status={}); dropping window result and not re-registering.",
+                    ctx.getCurrentKey(), rule.getRuleId(), liveRule != null ? liveRule.getStatus() : "removed");
+            return;
+        }
         // No-windowing rules never register timers, but guard defensively.
         if (rule.getWindowing() == null || rule.getWindowing().isNoWindowing()) return;
 

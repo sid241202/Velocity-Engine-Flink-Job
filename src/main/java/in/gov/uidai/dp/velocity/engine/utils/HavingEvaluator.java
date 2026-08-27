@@ -38,11 +38,17 @@ public final class HavingEvaluator {
 
     /**
      * Evaluates the threshold expression against raw event fields (no-windowing mode).
-     * A blank/null expression returns TRUE — meaning every matching event fires an anomaly.
+     * A blank/null expression returns FALSE, matching {@link #evaluate}'s established
+     * semantics: no threshold configured means "data-only rule" (the frontend's own
+     * rule-summary copy says exactly this, for windowed and no-windowing rules alike —
+     * see RuleSummaryPanel.jsx's thresholdDesc). A caller who genuinely wants "fire on
+     * every matching event, no threshold" can express that explicitly with a JEXL
+     * expression that's always true (e.g. "true") rather than relying on blank meaning
+     * something different here than it does for windowed rules.
      */
     public static boolean evaluateRaw(HavingThresholds thresholds, Map<String, Object> rawFields) {
         if (thresholds == null || thresholds.getExpression() == null || thresholds.getExpression().isBlank()) {
-            return true; // blank expression = fire on every matching event
+            return false; // blank expression = data-only rule, same as the windowed path
         }
         try {
             JexlExpression expr = JEXL.createExpression(thresholds.getExpression());

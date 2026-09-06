@@ -138,6 +138,21 @@ public class BucketStateManager {
         return results;
     }
 
+    /**
+     * Approximate total bucket-state key count, for the velocity_window_state_keys
+     * gauge. Uses rawEventCountAcc alone rather than summing across all 8
+     * accumulators: addEvent() unconditionally adds to rawEventCountAcc for
+     * every windowed rule regardless of which aggregation functions it uses,
+     * so its key count already tracks (rule, bucket) growth across the whole
+     * windowed-rule population — the accumulators for specific aggregation
+     * types (sum/avg/min/max/distinct) grow and shrink in lockstep with it,
+     * not independently, so summing all 8 would just multiply the same signal
+     * without adding information.
+     */
+    public long rawEventKeyCount() throws Exception {
+        return rawEventCountAcc.keyCount();
+    }
+
     public boolean isEmpty() throws Exception {
         return countAcc.isEmpty() && sumAcc.isEmpty() && avgAcc.isEmpty() &&
                minAcc.isEmpty() && maxAcc.isEmpty() && distinctExactAcc.isEmpty() &&

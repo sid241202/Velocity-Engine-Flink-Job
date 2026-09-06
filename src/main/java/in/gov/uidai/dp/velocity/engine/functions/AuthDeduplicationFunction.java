@@ -10,12 +10,14 @@ import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
+import org.apache.flink.metrics.Counter;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
 public class AuthDeduplicationFunction extends KeyedProcessFunction<String, Event, Event> {
 
     private transient ValueState<Boolean> seenState;
+    private transient Counter dedupDroppedCounter;
 
     @Override
     public void open(OpenContext parameters) {
@@ -28,6 +30,8 @@ public class AuthDeduplicationFunction extends KeyedProcessFunction<String, Even
         ValueStateDescriptor<Boolean> desc = new ValueStateDescriptor<>("deduplicator", Boolean.class);
         desc.enableTimeToLive(ttlConfig);
         seenState = getRuntimeContext().getState(desc);
+
+        dedupDroppedCounter = getRuntimeContext().getMetricGroup().counter("velocity_dedup_dropped_total");
     }
 
     @Override
@@ -41,6 +45,8 @@ public class AuthDeduplicationFunction extends KeyedProcessFunction<String, Even
         if (seenState.value() == null) {
             seenState.update(true);
             out.collect(event);
+        } else {
+            dedupDroppedCounter.inc();
         }
     }
 }

@@ -1,5 +1,6 @@
 package in.gov.uidai.dp.velocity.engine.functions;
 
+import com.codahale.metrics.SlidingWindowReservoir;
 import in.gov.uidai.dp.velocity.engine.aggregation.BucketStateManager;
 import in.gov.uidai.dp.velocity.engine.config.AuthDemoConfig;
 import in.gov.uidai.dp.velocity.engine.model.*;
@@ -13,11 +14,17 @@ import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.state.*;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
+import org.apache.flink.metrics.Counter;
+import org.apache.flink.metrics.Gauge;
+import org.apache.flink.metrics.Histogram;
+import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.streaming.api.functions.co.KeyedBroadcastProcessFunction;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -31,11 +38,29 @@ public class RuleEvaluatorFunction
     public static final OutputTag<AnomalyEvent> ANOMALY_TAG = new OutputTag<AnomalyEvent>("anomaly-events") {};
     public static final OutputTag<AnomalyEvent> REDIS_TAG   = new OutputTag<AnomalyEvent>("anomaly-redis") {};
 
+    private static final int HISTOGRAM_RESERVOIR_SIZE = 500;
+
     private transient ObjectMapper mapper;
     private transient BucketStateManager bucketStateManager;
     private transient ValueState<RuleSnapshot> ruleSnapshotState;
     private transient ValueState<HashSet<String>> anomalyFiredState;
     private transient ValueState<Long> aggEarlyFireState;
+
+    // ── Metrics ────────────────────────────────────────────────────────────
+    // volatile: the gauges below are read by the metrics-reporter thread, not
+    // just this operator's own task thread that writes them.
+    private transient MetricGroup metricGroup;
+    private transient volatile long activeRuleCount;
+    private transient volatile long pausedRuleCount;
+    // Per-rule_id histograms are created lazily and cached — registered once
+    // per rule, not recreated per record. Bounded by rule count (hundreds).
+    private transient Map<String, Histogram> ruleEvalDurationHistograms;
+    private transient Map<String, Histogram> ruleEvalDelayHistograms;
+    private transient Map<String, Counter> breachCounters;
+    private transient Counter resultsEmittedCounter;
+    private transient Counter anomalyEmittedCounter;
+    private transient Histogram resultsEmitDelayHistogram;
+    private transient Histogram anomalyEmitDelayHistogram;
 
     public RuleEvaluatorFunction() {}
 
@@ -64,6 +89,77 @@ public class RuleEvaluatorFunction
         ValueStateDescriptor<Long> aggEarlyFireDesc = new ValueStateDescriptor<>("agg_early_fire_ts", Long.class);
         aggEarlyFireDesc.enableTimeToLive(ttl);
         aggEarlyFireState = getRuntimeContext().getState(aggEarlyFireDesc);
+
+        metricGroup = getRuntimeContext().getMetricGroup();
+        activeRuleCount = 0L;
+        pausedRuleCount = 0L;
+        Gauge<Long> activeGauge = () -> activeRuleCount;
+        Gauge<Long> pausedGauge = () -> pausedRuleCount;
+        Gauge<Long> windowStateKeysGauge = () -> {
+            try {
+                return bucketStateManager.rawEventKeyCount();
+            } catch (Exception e) {
+                return 0L;
+            }
+        };
+        metricGroup.addGroup("status", "active").gauge("velocity_active_rules", activeGauge);
+        metricGroup.addGroup("status", "paused").gauge("velocity_active_rules", pausedGauge);
+        metricGroup.addGroup("operator", "rule-evaluator-function")
+                .gauge("velocity_window_state_keys", windowStateKeysGauge);
+
+        ruleEvalDurationHistograms = new HashMap<>();
+        ruleEvalDelayHistograms = new HashMap<>();
+        breachCounters = new HashMap<>();
+        resultsEmittedCounter = metricGroup.addGroup("topic", AuthDemoConfig.RESULTS_TOPIC)
+                .counter("velocity_output_emitted_total");
+        anomalyEmittedCounter = metricGroup.addGroup("topic", AuthDemoConfig.ANOMALY_TOPIC)
+                .counter("velocity_output_emitted_total");
+        // Named _ms, not _seconds: Flink's Histogram.update() only takes a
+        // long, and these delays are routinely sub-second.
+        resultsEmitDelayHistogram = metricGroup.addGroup("topic", AuthDemoConfig.RESULTS_TOPIC)
+                .histogram("velocity_sink_emit_delay_ms", newHistogram());
+        anomalyEmitDelayHistogram = metricGroup.addGroup("topic", AuthDemoConfig.ANOMALY_TOPIC)
+                .histogram("velocity_sink_emit_delay_ms", newHistogram());
+    }
+
+    private static DropwizardHistogramWrapper newHistogram() {
+        return new DropwizardHistogramWrapper(
+                new com.codahale.metrics.Histogram(new SlidingWindowReservoir(HISTOGRAM_RESERVOIR_SIZE)));
+    }
+
+    private Histogram getOrCreateRuleEvalDurationHistogram(String ruleId) {
+        return ruleEvalDurationHistograms.computeIfAbsent(ruleId, id ->
+                metricGroup.addGroup("rule_id", id).histogram("velocity_rule_eval_duration_ms", newHistogram()));
+    }
+
+    private Histogram getOrCreateRuleEvalDelayHistogram(String ruleId) {
+        return ruleEvalDelayHistograms.computeIfAbsent(ruleId, id ->
+                metricGroup.addGroup("rule_id", id).histogram("velocity_rule_eval_delay_ms", newHistogram()));
+    }
+
+    private Counter getOrCreateBreachCounter(String ruleId, String severity) {
+        return breachCounters.computeIfAbsent(ruleId + "|" + severity, k ->
+                metricGroup.addGroup("rule_id", ruleId).addGroup("severity", severity)
+                        .counter("velocity_breach_total"));
+    }
+
+    private static String severityOf(VelocityRule rule) {
+        String sev = rule.getSeverityLevel();
+        return (sev == null || sev.isBlank()) ? "UNKNOWN" : sev.toUpperCase();
+    }
+
+    /** Epoch-ms of the raw event's own timestamp, as resolved once by
+     * EventDeserializer for every event regardless of windowing — the same
+     * basis velocity_ingest_delay_ms uses, so the two are directly comparable
+     * (the difference is exactly the dedup+broadcast-join+eval overhead). */
+    private static long extractEventEpochMs(Event event) {
+        Object v = event.getFields().get("_event_timestamp_epoch_ms");
+        return (v instanceof Number) ? ((Number) v).longValue() : System.currentTimeMillis();
+    }
+
+    private static void recordDelay(Histogram histogram, long referenceEpochMs) {
+        long delayMs = System.currentTimeMillis() - referenceEpochMs;
+        histogram.update(Math.max(0L, delayMs));
     }
 
     @Override
@@ -71,10 +167,16 @@ public class RuleEvaluatorFunction
         VelocityRule rule = ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).get(keyedEvent.getId());
         if (rule == null || !rule.isActive()) return;
 
+        long evalStartNanos = System.nanoTime();
+        String ruleId = rule.getRuleId();
+        long eventEpochMs = extractEventEpochMs(keyedEvent.getWrapped());
+
         // ── NO-WINDOWING (Stateless Real-Time) Path ───────────────────────────
         // Zero state access, zero timer registration. Pure in-memory evaluation.
         if (rule.getWindowing() == null || rule.getWindowing().isNoWindowing()) {
             handleStatelessEvent(keyedEvent.getWrapped(), rule, ctx);
+            getOrCreateRuleEvalDurationHistogram(ruleId).update((System.nanoTime() - evalStartNanos) / 1_000_000L);
+            recordDelay(getOrCreateRuleEvalDelayHistogram(ruleId), eventEpochMs);
             return;
         }
 
@@ -113,6 +215,9 @@ public class RuleEvaluatorFunction
         if (sinks.isAggSinkEnabled()) {
             tryEarlyFireAgg(rule, eventTs, slideMs, offsetMs, ctx, out);
         }
+
+        getOrCreateRuleEvalDurationHistogram(ruleId).update((System.nanoTime() - evalStartNanos) / 1_000_000L);
+        recordDelay(getOrCreateRuleEvalDelayHistogram(ruleId), eventEpochMs);
     }
 
     // ── Stateless handler for NO-WINDOWING rules ──────────────────────────────
@@ -124,11 +229,17 @@ public class RuleEvaluatorFunction
         boolean shouldFire = HavingEvaluator.evaluateRaw(rule.getHavingThresholds(), event.getFields());
         if (!shouldFire) return;
 
+        getOrCreateBreachCounter(rule.getRuleId(), severityOf(rule)).inc();
+
         String producedAt = TimeUtils.currentIstString();
         AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), anomalyVal, producedAt, rule.getPenaltyTtlSeconds());
 
         SinkConfig sinks = rule.getEffectiveSinks();
-        if (sinks.isAnomalySinkEnabled())      ctx.output(ANOMALY_TAG, anomaly);
+        if (sinks.isAnomalySinkEnabled()) {
+            ctx.output(ANOMALY_TAG, anomaly);
+            anomalyEmittedCounter.inc();
+            recordDelay(anomalyEmitDelayHistogram, extractEventEpochMs(event));
+        }
         if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
 
         log.info("[STATELESS] rule={} groupKey={} entityVal={}", rule.getRuleId(), groupKey, anomalyVal);
@@ -144,12 +255,18 @@ public class RuleEvaluatorFunction
         curr.remove("_raw_events_");
         if (curr.isEmpty() || !HavingEvaluator.evaluate(rule.getHavingThresholds(), curr)) return;
 
+        getOrCreateBreachCounter(rule.getRuleId(), severityOf(rule)).inc();
+
         String groupKey = getGroupKey(ctx.getCurrentKey(), rule.getRuleId());
         String anomalyVal = resolveAnomalyVal(event, rule, groupKey);
         AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), anomalyVal, TimeUtils.currentIstString(), rule.getPenaltyTtlSeconds());
 
         SinkConfig sinks = rule.getEffectiveSinks();
-        if (sinks.isAnomalySinkEnabled())      ctx.output(ANOMALY_TAG, anomaly);
+        if (sinks.isAnomalySinkEnabled()) {
+            ctx.output(ANOMALY_TAG, anomaly);
+            anomalyEmittedCounter.inc();
+            recordDelay(anomalyEmitDelayHistogram, eventTs);
+        }
         if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
 
         if (fired == null) fired = new HashSet<>();
@@ -192,6 +309,8 @@ public class RuleEvaluatorFunction
                 TimeUtils.currentIstString(),
                 breached,
                 false)); // isFinal = false — partial/live-preview row
+        resultsEmittedCounter.inc();
+        recordDelay(resultsEmitDelayHistogram, eventTs);
 
         aggEarlyFireState.update(now);
     }
@@ -201,8 +320,23 @@ public class RuleEvaluatorFunction
         if (rule == null) return;
         String ruleId = rule.getRuleId();
         if (ruleId == null || ruleId.isBlank()) { log.warn("Null/blank ruleId — skipping"); return; }
-        if (rule.isDeleted()) { ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).remove(ruleId); log.info("Removed DELETED rule: {}", ruleId); }
-        else { ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC).put(ruleId, rule); log.info("Updated rule: {} status={}", ruleId, rule.getStatus()); }
+
+        BroadcastState<String, VelocityRule> rulesState = ctx.getBroadcastState(DynamicKeyFunction.RULE_STATE_DESC);
+        VelocityRule existing = rulesState.get(ruleId);
+        if (existing != null) {
+            if (existing.isActive()) activeRuleCount--;
+            else if (existing.isPaused()) pausedRuleCount--;
+        }
+
+        if (rule.isDeleted()) {
+            rulesState.remove(ruleId);
+            log.info("Removed DELETED rule: {}", ruleId);
+        } else {
+            if (rule.isActive()) activeRuleCount++;
+            else if (rule.isPaused()) pausedRuleCount++;
+            rulesState.put(ruleId, rule);
+            log.info("Updated rule: {} status={}", ruleId, rule.getStatus());
+        }
     }
 
     @Override
@@ -261,13 +395,22 @@ public class RuleEvaluatorFunction
                     producedAt,
                     breached,        // thresholdBreached — the critical missing field
                     true));          // isFinal — authoritative end-of-window row, state pruned
+            resultsEmittedCounter.inc();
+            recordDelay(resultsEmitDelayHistogram, winEnd);
+        }
+        if (breached) {
+            getOrCreateBreachCounter(rule.getRuleId(), severityOf(liveRule)).inc();
         }
         if (breached && (rule.getSinks().isAnomalySinkEnabled() || rule.getSinks().isAnomalyStoreSinkEnabled())) {
             String bucketKey = rule.getRuleId() + "#" + winStart;
             HashSet<String> fired = anomalyFiredState.value();
             if (fired == null || !fired.contains(bucketKey)) {
                 AnomalyEvent anomaly = new AnomalyEvent(rule.getRuleId(), groupKey, producedAt, rule.getPenaltyTtlSeconds());
-                if (rule.getSinks().isAnomalySinkEnabled())      ctx.output(ANOMALY_TAG, anomaly);
+                if (rule.getSinks().isAnomalySinkEnabled()) {
+                    ctx.output(ANOMALY_TAG, anomaly);
+                    anomalyEmittedCounter.inc();
+                    recordDelay(anomalyEmitDelayHistogram, winEnd);
+                }
                 if (rule.getSinks().isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
                 if (fired == null) fired = new HashSet<>();
                 fired.add(bucketKey);
@@ -310,6 +453,8 @@ public class RuleEvaluatorFunction
                 TimeUtils.currentIstString(),
                 breached,
                 false)); // isFinal = false — lateness catch-up snapshot; state not pruned, real onTimer still fires
+        resultsEmittedCounter.inc();
+        recordDelay(resultsEmitDelayHistogram, winEnd);
     }
 
     private void reRegister(RuleSnapshot rule, long ts, OnTimerContext ctx) throws Exception {

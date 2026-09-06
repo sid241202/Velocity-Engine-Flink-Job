@@ -71,4 +71,12 @@ public class CountAccumulator {
     public boolean isEmpty() throws Exception {
         return state.isEmpty();
     }
+
+    /** Number of distinct bucket keys currently held — used for the
+     * velocity_window_state_keys state-bloat gauge. */
+    public long keyCount() throws Exception {
+        long count = 0L;
+        for (String ignored : state.keys()) count++;
+        return count;
+    }
 }

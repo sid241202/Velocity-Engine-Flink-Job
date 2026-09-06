@@ -42,6 +42,24 @@ public final class TimeUtils {
         return IST_FMT.format(Instant.now());
     }
 
+    /**
+     * Inverse of {@link #epochMsToIstString}/{@link #currentIstString}: parses a
+     * naive IST "yyyy-MM-dd HH:mm:ss" string (e.g. an AggregationResult/
+     * AnomalyEvent's producedAt) back to epoch millis. Returns -1 on failure —
+     * callers doing delay-metric math must treat that as "timestamp unavailable"
+     * and skip the observation, not feed -1 into a subtraction.
+     */
+    public static long istStringToEpochMs(String istString) {
+        if (istString == null || istString.isBlank()) return -1L;
+        try {
+            LocalDateTime ldt = LocalDateTime.parse(istString, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            return ldt.atZone(INDIA_ZONE).toInstant().toEpochMilli();
+        } catch (DateTimeParseException e) {
+            log.warn("Cannot parse IST timestamp '{}': {}", istString, e.getMessage());
+            return -1L;
+        }
+    }
+
     public static long floorToSlide(long epochMs, long slideMs, long offsetMs) {
         return Math.floorDiv(epochMs - offsetMs, slideMs) * slideMs + offsetMs;
     }

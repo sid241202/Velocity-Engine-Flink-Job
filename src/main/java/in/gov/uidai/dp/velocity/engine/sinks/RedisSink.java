@@ -1,12 +1,18 @@
 package in.gov.uidai.dp.velocity.engine.sinks;
 
+import com.codahale.metrics.SlidingWindowReservoir;
 import in.gov.uidai.dp.velocity.engine.config.RedisConfig;
 import in.gov.uidai.dp.velocity.engine.model.AnomalyEvent;
+import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
+import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
+import org.apache.flink.metrics.Counter;
+import org.apache.flink.metrics.Histogram;
+import org.apache.flink.metrics.MetricGroup;
 import redis.clients.jedis.Connection;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.Jedis;
@@ -32,7 +38,7 @@ public class RedisSink implements Sink<AnomalyEvent> {
 
     @Override
     public SinkWriter<AnomalyEvent> createWriter(WriterInitContext context) {
-        return new RedisWriter(config, penaltyTtlSeconds);
+        return new RedisWriter(config, penaltyTtlSeconds, context.metricGroup());
     }
 
     @Slf4j
@@ -42,9 +48,21 @@ public class RedisSink implements Sink<AnomalyEvent> {
         private final JedisPool jedisPool;
         private final JedisCluster jedisCluster;
 
-        public RedisWriter(RedisConfig config, int penaltyTtlSeconds) {
+        // Registered once per writer instance (subtask lifetime), reused for
+        // every record. Named _ms, not _seconds: Flink's Histogram.update()
+        // only takes a long, and these are routinely sub-second.
+        private final Histogram writeDurationMsHistogram;
+        private final Histogram writeDelayMsHistogram;
+        private final Counter writeErrorsCounter;
+
+        public RedisWriter(RedisConfig config, int penaltyTtlSeconds, MetricGroup metricGroup) {
             this.config = config;
             this.penaltyTtlSeconds = penaltyTtlSeconds;
+            this.writeDurationMsHistogram = metricGroup.histogram("velocity_redis_write_duration_ms",
+                    new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
+            this.writeDelayMsHistogram = metricGroup.histogram("velocity_redis_write_delay_ms",
+                    new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
+            this.writeErrorsCounter = metricGroup.counter("velocity_redis_write_errors_total");
 
             if (config.getMode() == RedisConfig.Mode.CLUSTER) {
                 GenericObjectPoolConfig<Connection> clusterPoolConfig = new GenericObjectPoolConfig<>();
@@ -116,6 +134,7 @@ public class RedisSink implements Sink<AnomalyEvent> {
             // deliberate, breaking change to the penalty-store key scheme.
             String key = "penalty:" + event.getId() + ":" + event.getEntityValue();
             String val = event.getProducedAt() != null ? event.getProducedAt() : "1";
+            long writeStartMs = System.currentTimeMillis();
             for (int i = 0; i < 3; i++) {
                 try {
                     if (config.getMode() == RedisConfig.Mode.CLUSTER) {
@@ -134,10 +153,20 @@ public class RedisSink implements Sink<AnomalyEvent> {
                         }
                     }
                     log.info("Redis SETEX key={} ttl={}s", key, effectiveTtl);
+                    writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
+                    long producedAtMs = TimeUtils.istStringToEpochMs(event.getProducedAt());
+                    if (producedAtMs > 0) {
+                        writeDelayMsHistogram.update(Math.max(0L, System.currentTimeMillis() - producedAtMs));
+                    }
                     return;
                 } catch (Exception e) {
-                    if (i == 2) log.error("RedisSink failed after 3 attempts key={}: {}", key, e.getMessage());
-                    else log.warn("RedisSink attempt {}/3 failed: {}", i + 1, e.getMessage());
+                    if (i == 2) {
+                        log.error("RedisSink failed after 3 attempts key={}: {}", key, e.getMessage());
+                        writeErrorsCounter.inc();
+                        writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
+                    } else {
+                        log.warn("RedisSink attempt {}/3 failed: {}", i + 1, e.getMessage());
+                    }
                     try {
                         if (i < 2) Thread.sleep(backoffMs[i]);
                     } catch (InterruptedException ie) {

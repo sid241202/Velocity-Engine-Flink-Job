@@ -38,6 +38,16 @@ public final class AuthDemoConfig {
     public static final String CHECKPOINT_DIR = "s3a://prd-bi-data-platform-configs/flink/checkpoints/velocity-auth/";
 
     // ==================== TUNING ====================
+    // Job-wide default parallelism for the main event path (Kafka source through
+    // rule evaluation). Must not exceed the source topic's partition count (the
+    // Kafka source operator can never use more parallel subtasks than there are
+    // partitions to assign them) — see PRODUCTION_CAPACITY_SPECS.txt at the repo
+    // root for the sizing rationale. Overridable per-environment via
+    // VELOCITY_ENGINE_PARALLELISM without a rebuild; defaults to 8, the low end
+    // of this topic's known 8-9 partition range, so a stale/unset value never
+    // silently exceeds the partition count.
+    public static final int JOB_PARALLELISM = Integer.parseInt(
+            System.getenv().getOrDefault("VELOCITY_ENGINE_PARALLELISM", "8"));
     public static final long MAX_WATERMARK_LAG_MS = 60000;
     public static final long DEDUP_TTL_MINUTES    = 15;
     /** Minimum wall-clock gap between early-fire (partial) AggregationResult emissions per group key. */

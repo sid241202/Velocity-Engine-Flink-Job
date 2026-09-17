@@ -51,7 +51,14 @@ public class AuthDemoPipeline {
                                 "in.gov.uidai.dp.velocity.engine.pipeline.RocksDBOptions");
                 conf.setString("state.checkpoints.dir", AuthDemoConfig.CHECKPOINT_DIR);
                 StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-                env.setParallelism(1);
+                // Was hardcoded to 1 — pinned the whole main event path (Kafka
+                // consumption across every source partition, dedup, dynamic-key
+                // routing, rule evaluation) to a single thread regardless of how
+                // many task slots/partitions were available. Now driven by
+                // AuthDemoConfig.JOB_PARALLELISM (env-overridable, capped at the
+                // source partition count) — see that field's doc comment and
+                // PRODUCTION_CAPACITY_SPECS.txt for the sizing rationale.
+                env.setParallelism(AuthDemoConfig.JOB_PARALLELISM);
                 env.enableCheckpointing(60_000L, CheckpointingMode.EXACTLY_ONCE);
                 env.getCheckpointConfig().setCheckpointTimeout(600_000L);
                 env.getCheckpointConfig().setMinPauseBetweenCheckpoints(10_000L);

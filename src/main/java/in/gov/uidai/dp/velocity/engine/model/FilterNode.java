@@ -22,6 +22,8 @@ import org.apache.flink.api.common.typeinfo.TypeInfo;
  *   <li>Null checks: IS_NULL, IS_NOT_NULL  — value field is ignored</li>
  *   <li>Date/Time:  DATE_BEFORE, DATE_AFTER, DATE_EQUALS
  *       — value is compared as epoch-ms or ISO-8601 depending on {@code format}</li>
+ *   <li>Special: IS_FINANCIAL_AUA — field and value are both ignored; checks
+ *       {@code _data.aua} against the hardcoded {@link in.gov.uidai.dp.velocity.engine.utils.FinancialAuaList}</li>
  * </ul>
  *
  * <p>The {@code format} field is used only by date operators:

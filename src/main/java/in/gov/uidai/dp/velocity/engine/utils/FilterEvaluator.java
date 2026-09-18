@@ -65,6 +65,16 @@ public final class FilterEvaluator {
 
         String opUpper = operator.toUpperCase();
 
+        // ── Financial AUA check — ignores cond.getField()/cond.getValue() ─────
+        // entirely: the target is always _data.aua and the code list is fixed
+        // here (FinancialAuaList), not read from the rule. The frontend clears
+        // both field and value when this operator is selected, so this must
+        // not depend on either being present.
+        if ("IS_FINANCIAL_AUA".equals(opUpper)) {
+            Object auaVal = FieldExtractor.extractObject(event, "_data.aua");
+            return auaVal != null && FinancialAuaList.CODES.contains(String.valueOf(auaVal));
+        }
+
         // ── Null checks (don't need eventVal) ────────────────────────────────
         if ("IS_NULL".equals(opUpper)) {
             Object eventVal = FieldExtractor.extractObject(event, cond.getField());

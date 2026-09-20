@@ -1,7 +1,7 @@
 package in.gov.uidai.dp.velocity.engine.sinks;
 
 import com.codahale.metrics.SlidingWindowReservoir;
-import in.gov.uidai.dp.velocity.engine.config.RedisConfig;
+import in.gov.uidai.dp.velocity.engine.config.KeyDbConfig;
 import in.gov.uidai.dp.velocity.engine.model.AnomalyEvent;
 import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -24,26 +24,28 @@ import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
 
+// Writes to KeyDB via the Jedis client (RESP-protocol compatible with
+// Redis, so the same client library and commands work unchanged).
 @Slf4j
-public class RedisSink implements Sink<AnomalyEvent> {
+public class KeyDbSink implements Sink<AnomalyEvent> {
     private static final long serialVersionUID = 1L;
 
-    private final RedisConfig config;
+    private final KeyDbConfig config;
     private final int penaltyTtlSeconds;
 
-    public RedisSink(RedisConfig config, int penaltyTtlSeconds) {
+    public KeyDbSink(KeyDbConfig config, int penaltyTtlSeconds) {
         this.config = config;
         this.penaltyTtlSeconds = penaltyTtlSeconds;
     }
 
     @Override
     public SinkWriter<AnomalyEvent> createWriter(WriterInitContext context) {
-        return new RedisWriter(config, penaltyTtlSeconds, context.metricGroup());
+        return new KeyDbWriter(config, penaltyTtlSeconds, context.metricGroup());
     }
 
     @Slf4j
-    public static class RedisWriter implements SinkWriter<AnomalyEvent> {
-        private final RedisConfig config;
+    public static class KeyDbWriter implements SinkWriter<AnomalyEvent> {
+        private final KeyDbConfig config;
         private final int penaltyTtlSeconds;
         private final JedisPool jedisPool;
         private final JedisCluster jedisCluster;
@@ -51,11 +53,17 @@ public class RedisSink implements Sink<AnomalyEvent> {
         // Registered once per writer instance (subtask lifetime), reused for
         // every record. Named _ms, not _seconds: Flink's Histogram.update()
         // only takes a long, and these are routinely sub-second.
+        //
+        // Metric names below are unchanged from the Redis-era names
+        // (velocity_redis_write_*) even though this now writes to KeyDB —
+        // they're literal `expr` targets in the existing Grafana dashboard
+        // JSON (see Metrics Side.txt), so renaming them would break those
+        // panels. Do not rename without updating the dashboard first.
         private final Histogram writeDurationMsHistogram;
         private final Histogram writeDelayMsHistogram;
         private final Counter writeErrorsCounter;
 
-        public RedisWriter(RedisConfig config, int penaltyTtlSeconds, MetricGroup metricGroup) {
+        public KeyDbWriter(KeyDbConfig config, int penaltyTtlSeconds, MetricGroup metricGroup) {
             this.config = config;
             this.penaltyTtlSeconds = penaltyTtlSeconds;
             this.writeDurationMsHistogram = metricGroup.histogram("velocity_redis_write_duration_ms",
@@ -64,7 +72,7 @@ public class RedisSink implements Sink<AnomalyEvent> {
                     new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
             this.writeErrorsCounter = metricGroup.counter("velocity_redis_write_errors_total");
 
-            if (config.getMode() == RedisConfig.Mode.CLUSTER) {
+            if (config.getMode() == KeyDbConfig.Mode.CLUSTER) {
                 GenericObjectPoolConfig<Connection> clusterPoolConfig = new GenericObjectPoolConfig<>();
                 clusterPoolConfig.setMaxTotal(config.getMaxTotal());
                 clusterPoolConfig.setMaxIdle(config.getMaxIdle());
@@ -78,14 +86,16 @@ public class RedisSink implements Sink<AnomalyEvent> {
                 clusterPoolConfig.setBlockWhenExhausted(true);
 
                 Set<HostAndPort> nodes = new HashSet<>();
-                for (RedisConfig.HostPort hp : config.getHosts()) {
+                for (KeyDbConfig.HostPort hp : config.getHosts()) {
                     nodes.add(new HostAndPort(hp.getHost(), hp.getPort()));
                 }
+                // null (not empty string) tells Jedis to skip AUTH entirely —
+                // required since the new KeyDB instance has no password set.
                 String pw = (config.getPassword() != null && !config.getPassword().isEmpty()) ? config.getPassword() : null;
                 this.jedisCluster = new JedisCluster(nodes, config.getConnectTimeoutMs(), config.getTimeoutMs(),
                         config.getMaxAttempts(), pw, clusterPoolConfig);
                 this.jedisPool = null;
-                log.info("RedisSink CLUSTER mode, {} nodes", nodes.size());
+                log.info("KeyDbSink CLUSTER mode, {} nodes", nodes.size());
             } else {
                 JedisPoolConfig poolConfig = new JedisPoolConfig();
                 poolConfig.setMaxTotal(config.getMaxTotal());
@@ -99,11 +109,13 @@ public class RedisSink implements Sink<AnomalyEvent> {
                 poolConfig.setNumTestsPerEvictionRun(3);
                 poolConfig.setBlockWhenExhausted(true);
 
-                RedisConfig.HostPort hp = config.firstHost();
+                KeyDbConfig.HostPort hp = config.firstHost();
+                // null (not empty string) tells Jedis to skip AUTH entirely —
+                // required since the new KeyDB instance has no password set.
                 String pw = (config.getPassword() != null && !config.getPassword().isEmpty()) ? config.getPassword() : null;
                 this.jedisPool = new JedisPool(poolConfig, hp.getHost(), hp.getPort(), config.getTimeoutMs(), pw);
                 this.jedisCluster = null;
-                log.info("RedisSink STANDALONE mode: {}:{}", hp.getHost(), hp.getPort());
+                log.info("KeyDbSink STANDALONE mode: {}:{}", hp.getHost(), hp.getPort());
             }
         }
 
@@ -127,7 +139,8 @@ public class RedisSink implements Sink<AnomalyEvent> {
             //
             // SETEX is a single atomic command (set value + expiry), so no
             // pipeline/Lua round-trip is needed and it works identically in
-            // standalone and cluster mode.
+            // standalone and cluster mode, and identically on KeyDB (RESP-
+            // protocol compatible with Redis).
             //
             // READER CONTRACT: consumers must check EXISTS penalty:{ruleId}:{entity}
             // (previously SISMEMBER penalty:{ruleId} {entity}). This is a
@@ -137,7 +150,7 @@ public class RedisSink implements Sink<AnomalyEvent> {
             long writeStartMs = System.currentTimeMillis();
             for (int i = 0; i < 3; i++) {
                 try {
-                    if (config.getMode() == RedisConfig.Mode.CLUSTER) {
+                    if (config.getMode() == KeyDbConfig.Mode.CLUSTER) {
                         if (effectiveTtl > 0) {
                             jedisCluster.setex(key, effectiveTtl, val);
                         } else {
@@ -152,7 +165,7 @@ public class RedisSink implements Sink<AnomalyEvent> {
                             }
                         }
                     }
-                    log.info("Redis SETEX key={} ttl={}s", key, effectiveTtl);
+                    log.info("KeyDB SETEX key={} ttl={}s", key, effectiveTtl);
                     writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
                     long producedAtMs = TimeUtils.istStringToEpochMs(event.getProducedAt());
                     if (producedAtMs > 0) {
@@ -161,11 +174,11 @@ public class RedisSink implements Sink<AnomalyEvent> {
                     return;
                 } catch (Exception e) {
                     if (i == 2) {
-                        log.error("RedisSink failed after 3 attempts key={}: {}", key, e.getMessage());
+                        log.error("KeyDbSink failed after 3 attempts key={}: {}", key, e.getMessage());
                         writeErrorsCounter.inc();
                         writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
                     } else {
-                        log.warn("RedisSink attempt {}/3 failed: {}", i + 1, e.getMessage());
+                        log.warn("KeyDbSink attempt {}/3 failed: {}", i + 1, e.getMessage());
                     }
                     try {
                         if (i < 2) Thread.sleep(backoffMs[i]);
@@ -179,7 +192,7 @@ public class RedisSink implements Sink<AnomalyEvent> {
 
         @Override
         public void flush(boolean endOfInput) {
-            // Redis writes are synchronous; nothing to flush
+            // KeyDB writes are synchronous; nothing to flush
         }
 
         @Override

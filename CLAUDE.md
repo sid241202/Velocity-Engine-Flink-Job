@@ -25,11 +25,14 @@ autonomy/permission scope — this file only covers what's specific to this repo
   `CountDistinctExact` was fixed to an O(1)-add storage representation
   (was previously re-serializing/scanning on every add).
 - `sinks/ClickHouseSinkBuilder.java`, `ClickHouseResultConverter.java`,
-  `ClickHouseDdlInitializer.java`, `sinks/RedisSink.java` — Redis penalty
-  keys are per-entity (fixed from a prior shared/global-key design).
+  `ClickHouseDdlInitializer.java`, `sinks/KeyDbSink.java` (formerly
+  `RedisSink.java` — Redis was replaced by KeyDB, RESP-compatible so the
+  Jedis client and commands are unchanged) — penalty keys are per-entity
+  (fixed from a prior shared/global-key design).
 - `model/VelocityRule.java` and friends — the rule schema shared (as JSON)
   with the backend via `DE.AUTH.VELOCITY_ENGINE.RULES`.
-- `config/AuthDemoConfig.java`, `ClickHouseSinkConfig.java`, `RedisConfig.java`.
+- `config/AuthDemoConfig.java`, `ClickHouseSinkConfig.java`,
+  `KeyDbConfig.java` (formerly `RedisConfig.java`).
 
 ## Kafka topics (see `../CLAUDE.md` for the full data-flow picture)
 

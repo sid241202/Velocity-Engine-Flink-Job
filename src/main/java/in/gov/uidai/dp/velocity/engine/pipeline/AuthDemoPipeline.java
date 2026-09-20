@@ -1,7 +1,7 @@
 package in.gov.uidai.dp.velocity.engine.pipeline;
 
 import in.gov.uidai.dp.velocity.engine.config.AuthDemoConfig;
-import in.gov.uidai.dp.velocity.engine.config.RedisConfig;
+import in.gov.uidai.dp.velocity.engine.config.KeyDbConfig;
 import in.gov.uidai.dp.velocity.engine.deserializers.EventDeserializer;
 import in.gov.uidai.dp.velocity.engine.deserializers.RuleDeserializer;
 import in.gov.uidai.dp.velocity.engine.functions.AuthDeduplicationFunction;
@@ -12,7 +12,7 @@ import in.gov.uidai.dp.velocity.engine.model.AnomalyEvent;
 import in.gov.uidai.dp.velocity.engine.model.Event;
 import in.gov.uidai.dp.velocity.engine.model.Keyed;
 import in.gov.uidai.dp.velocity.engine.model.VelocityRule;
-import in.gov.uidai.dp.velocity.engine.sinks.RedisSink;
+import in.gov.uidai.dp.velocity.engine.sinks.KeyDbSink;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.configuration.Configuration;
@@ -137,12 +137,16 @@ public class AuthDemoPipeline {
                                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
                                 .name("AnomalyKafkaSink").uid("anomaly-kafka-sink");
 
-                // Redis Anomaly Store Sink
-                results.getSideOutput(RuleEvaluatorFunction.REDIS_TAG)
-                                .sinkTo(new RedisSink(RedisConfig.fromConfig(), AuthDemoConfig.REDIS_DEFAULT_TTL_SECONDS))
-                                .name("RedisAnomalyStoreSink").uid("redis-anomaly-store-sink");
+                // KeyDB Anomaly Store Sink (formerly Redis — see KeyDbConfig/KeyDbSink).
+                // uid() is deliberately left as "redis-anomaly-store-sink": Flink matches
+                // operator state to this string on savepoint/checkpoint restore, and
+                // changing it buys nothing functionally while risking a restore mismatch
+                // for anyone redeploying from an existing savepoint.
+                results.getSideOutput(RuleEvaluatorFunction.KEYDB_TAG)
+                                .sinkTo(new KeyDbSink(KeyDbConfig.fromConfig(), AuthDemoConfig.KEYDB_DEFAULT_TTL_SECONDS))
+                                .name("KeyDbAnomalyStoreSink").uid("redis-anomaly-store-sink");
 
-                log.info("Executing UIDAI Velocity Engine — 3-sink: AggKafka + AnomalyKafka + Redis");
+                log.info("Executing UIDAI Velocity Engine — 3-sink: AggKafka + AnomalyKafka + KeyDB");
                 env.execute("UIDAI Velocity Engine Auth Demo");
         }
 }

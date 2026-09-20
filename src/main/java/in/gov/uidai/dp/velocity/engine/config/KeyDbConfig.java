@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
 
 @Value
 @Builder
-public class RedisConfig implements Serializable {
+public class KeyDbConfig implements Serializable {
     private static final long serialVersionUID = 1L;
 
     public enum Mode { STANDALONE, CLUSTER }
@@ -32,31 +32,31 @@ public class RedisConfig implements Serializable {
         int port;
     }
 
-    public static RedisConfig fromConfig() {
-        Mode mode = "CLUSTER".equalsIgnoreCase(AuthDemoConfig.REDIS_MODE) ? Mode.CLUSTER : Mode.STANDALONE;
-        List<HostPort> hosts = Arrays.stream(AuthDemoConfig.REDIS_HOSTS.split(","))
+    public static KeyDbConfig fromConfig() {
+        Mode mode = "CLUSTER".equalsIgnoreCase(AuthDemoConfig.KEYDB_MODE) ? Mode.CLUSTER : Mode.STANDALONE;
+        List<HostPort> hosts = Arrays.stream(AuthDemoConfig.KEYDB_HOSTS.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .map(s -> {
                     String[] parts = s.split(":");
-                    if (parts.length != 2) throw new IllegalArgumentException("Invalid Redis host:port: " + s);
+                    if (parts.length != 2) throw new IllegalArgumentException("Invalid KeyDB host:port: " + s);
                     return new HostPort(parts[0].trim(), Integer.parseInt(parts[1].trim()));
                 })
                 .collect(Collectors.toList());
-        return RedisConfig.builder()
+        return KeyDbConfig.builder()
                 .mode(mode).hosts(hosts)
-                .password(AuthDemoConfig.REDIS_PASSWORD)
-                .maxTotal(AuthDemoConfig.REDIS_MAX_TOTAL)
-                .maxIdle(AuthDemoConfig.REDIS_MAX_IDLE)
-                .minIdle(AuthDemoConfig.REDIS_MIN_IDLE)
-                .timeoutMs(AuthDemoConfig.REDIS_TIMEOUT_MS)
-                .connectTimeoutMs(AuthDemoConfig.REDIS_CONNECT_TIMEOUT_MS)
-                .maxAttempts(AuthDemoConfig.REDIS_MAX_ATTEMPTS)
+                .password(AuthDemoConfig.KEYDB_PASSWORD)
+                .maxTotal(AuthDemoConfig.KEYDB_MAX_TOTAL)
+                .maxIdle(AuthDemoConfig.KEYDB_MAX_IDLE)
+                .minIdle(AuthDemoConfig.KEYDB_MIN_IDLE)
+                .timeoutMs(AuthDemoConfig.KEYDB_TIMEOUT_MS)
+                .connectTimeoutMs(AuthDemoConfig.KEYDB_CONNECT_TIMEOUT_MS)
+                .maxAttempts(AuthDemoConfig.KEYDB_MAX_ATTEMPTS)
                 .build();
     }
 
     public HostPort firstHost() {
-        if (hosts == null || hosts.isEmpty()) throw new IllegalStateException("No Redis hosts configured");
+        if (hosts == null || hosts.isEmpty()) throw new IllegalStateException("No KeyDB hosts configured");
         return hosts.get(0);
     }
 }

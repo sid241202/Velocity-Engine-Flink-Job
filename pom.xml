@@ -195,6 +195,8 @@
             <version>1.5.27</version>
             <scope>test</scope>
         </dependency>
+        <!-- Jedis: RESP-protocol client, used to connect to KeyDB (formerly Redis).
+             KeyDB is RESP-compatible, so this dependency doesn't need to change. -->
         <dependency>
             <groupId>redis.clients</groupId>
             <artifactId>jedis</artifactId>

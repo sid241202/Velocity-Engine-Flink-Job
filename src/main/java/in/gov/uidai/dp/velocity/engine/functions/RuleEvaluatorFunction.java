@@ -36,7 +36,7 @@ public class RuleEvaluatorFunction
     private static final long serialVersionUID = 3L;
 
     public static final OutputTag<AnomalyEvent> ANOMALY_TAG = new OutputTag<AnomalyEvent>("anomaly-events") {};
-    public static final OutputTag<AnomalyEvent> REDIS_TAG   = new OutputTag<AnomalyEvent>("anomaly-redis") {};
+    public static final OutputTag<AnomalyEvent> KEYDB_TAG   = new OutputTag<AnomalyEvent>("anomaly-keydb") {};
 
     private static final int HISTOGRAM_RESERVOIR_SIZE = 500;
 
@@ -240,7 +240,7 @@ public class RuleEvaluatorFunction
             anomalyEmittedCounter.inc();
             recordDelay(anomalyEmitDelayHistogram, extractEventEpochMs(event));
         }
-        if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
+        if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(KEYDB_TAG, anomaly);
 
         log.info("[STATELESS] rule={} groupKey={} entityVal={}", rule.getRuleId(), groupKey, anomalyVal);
     }
@@ -267,7 +267,7 @@ public class RuleEvaluatorFunction
             anomalyEmittedCounter.inc();
             recordDelay(anomalyEmitDelayHistogram, eventTs);
         }
-        if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
+        if (sinks.isAnomalyStoreSinkEnabled()) ctx.output(KEYDB_TAG, anomaly);
 
         if (fired == null) fired = new HashSet<>();
         fired.add(bucketKey);
@@ -411,7 +411,7 @@ public class RuleEvaluatorFunction
                     anomalyEmittedCounter.inc();
                     recordDelay(anomalyEmitDelayHistogram, winEnd);
                 }
-                if (rule.getSinks().isAnomalyStoreSinkEnabled()) ctx.output(REDIS_TAG, anomaly);
+                if (rule.getSinks().isAnomalyStoreSinkEnabled()) ctx.output(KEYDB_TAG, anomaly);
                 if (fired == null) fired = new HashSet<>();
                 fired.add(bucketKey);
                 anomalyFiredState.update(fired);

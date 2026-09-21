@@ -1,6 +1,6 @@
 package in.gov.uidai.dp.velocity.engine.deserializers;
 
-import com.codahale.metrics.SlidingWindowReservoir;
+// import com.codahale.metrics.SlidingWindowReservoir;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.gov.uidai.dp.velocity.engine.model.Event;
 import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
@@ -8,10 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
-import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
-import org.apache.flink.metrics.Counter;
-import org.apache.flink.metrics.Histogram;
-import org.apache.flink.metrics.MetricGroup;
+// import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
+// import org.apache.flink.metrics.Counter;
+// import org.apache.flink.metrics.Histogram;
+// import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.util.Collector;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
@@ -25,7 +25,7 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
     // Sliding window (not a decaying/exponential reservoir): these are ops
     // dashboards for "what's happening right now", so a plain recent-N-samples
     // window is more legible than time-decayed weighting.
-    private static final int HISTOGRAM_RESERVOIR_SIZE = 500;
+    // private static final int HISTOGRAM_RESERVOIR_SIZE = 500;
 
     private final String sourceTopic;
     private final String eventTimestampField;
@@ -35,10 +35,10 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
 
     // Registered once in open(), reused for every record — never recreated
     // per-record.
-    private transient Counter eventsConsumedCounter;
-    private transient Counter emptyRecordCounter;
-    private transient Counter parseErrorCounter;
-    private transient Histogram ingestDelayMsHistogram;
+    // private transient Counter eventsConsumedCounter;
+    // private transient Counter emptyRecordCounter;
+    // private transient Counter parseErrorCounter;
+    // private transient Histogram ingestDelayMsHistogram;
 
     public EventDeserializer(String sourceTopic,
             String eventTimestampField, String eventTimestampFormat) {
@@ -49,18 +49,18 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
 
     @Override
     public void open(DeserializationSchema.InitializationContext context) throws Exception {
-        MetricGroup topicGroup = context.getMetricGroup().addGroup("topic", sourceTopic);
-        eventsConsumedCounter = topicGroup.counter("velocity_events_consumed_total");
-        emptyRecordCounter = topicGroup.addGroup("error_type", "empty_record")
-                .counter("velocity_deserialization_errors_total");
-        parseErrorCounter = topicGroup.addGroup("error_type", "parse_error")
-                .counter("velocity_deserialization_errors_total");
+        // MetricGroup topicGroup = context.getMetricGroup().addGroup("topic", sourceTopic);
+        // eventsConsumedCounter = topicGroup.counter("velocity_events_consumed_total");
+        // emptyRecordCounter = topicGroup.addGroup("error_type", "empty_record")
+        //         .counter("velocity_deserialization_errors_total");
+        // parseErrorCounter = topicGroup.addGroup("error_type", "parse_error")
+        //         .counter("velocity_deserialization_errors_total");
         // Named _ms, not _seconds: Flink's Histogram.update() only accepts a
         // long, and these delays are routinely sub-second — truncating to
         // whole seconds would lose virtually all resolution.
-        ingestDelayMsHistogram = topicGroup.histogram("velocity_ingest_delay_ms",
-                new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(
-                        new SlidingWindowReservoir(HISTOGRAM_RESERVOIR_SIZE))));
+        // ingestDelayMsHistogram = topicGroup.histogram("velocity_ingest_delay_ms",
+        //         new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(
+        //                 new SlidingWindowReservoir(HISTOGRAM_RESERVOIR_SIZE))));
     }
 
     @Override
@@ -68,7 +68,7 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
         if (record.value() == null || record.value().length == 0) {
             log.warn("Received null/empty record from topic={} partition={} offset={}",
                     record.topic(), record.partition(), record.offset());
-            emptyRecordCounter.inc();
+            // emptyRecordCounter.inc();
             return;
         }
 
@@ -90,16 +90,16 @@ public class EventDeserializer implements KafkaRecordDeserializationSchema<Event
                 event.put("_data", objectMapper.writeValueAsString(dataObj));
             }
 
-            eventsConsumedCounter.inc();
-            long ingestDelayMs = System.currentTimeMillis() - epochMs;
-            ingestDelayMsHistogram.update(Math.max(0L, ingestDelayMs));
+            // eventsConsumedCounter.inc();
+            // long ingestDelayMs = System.currentTimeMillis() - epochMs;
+            // ingestDelayMsHistogram.update(Math.max(0L, ingestDelayMs));
 
             out.collect(event);
 
         } catch (Exception e) {
             log.error("Failed to deserialize event from topic={} offset={}: {}",
                     sourceTopic, record.offset(), e.getMessage());
-            parseErrorCounter.inc();
+            // parseErrorCounter.inc();
         }
     }
 

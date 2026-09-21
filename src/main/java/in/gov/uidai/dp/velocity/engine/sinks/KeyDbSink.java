@@ -1,6 +1,6 @@
 package in.gov.uidai.dp.velocity.engine.sinks;
 
-import com.codahale.metrics.SlidingWindowReservoir;
+// import com.codahale.metrics.SlidingWindowReservoir;
 import in.gov.uidai.dp.velocity.engine.config.KeyDbConfig;
 import in.gov.uidai.dp.velocity.engine.model.AnomalyEvent;
 import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
@@ -9,9 +9,9 @@ import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
-import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
-import org.apache.flink.metrics.Counter;
-import org.apache.flink.metrics.Histogram;
+// import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
+// import org.apache.flink.metrics.Counter;
+// import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.MetricGroup;
 import redis.clients.jedis.Connection;
 import redis.clients.jedis.HostAndPort;
@@ -59,18 +59,20 @@ public class KeyDbSink implements Sink<AnomalyEvent> {
         // they're literal `expr` targets in the existing Grafana dashboard
         // JSON (see Metrics Side.txt), so renaming them would break those
         // panels. Do not rename without updating the dashboard first.
-        private final Histogram writeDurationMsHistogram;
-        private final Histogram writeDelayMsHistogram;
-        private final Counter writeErrorsCounter;
+        //
+        // METRICS TEMPORARILY DISABLED — see below.
+        // private final Histogram writeDurationMsHistogram;
+        // private final Histogram writeDelayMsHistogram;
+        // private final Counter writeErrorsCounter;
 
         public KeyDbWriter(KeyDbConfig config, int penaltyTtlSeconds, MetricGroup metricGroup) {
             this.config = config;
             this.penaltyTtlSeconds = penaltyTtlSeconds;
-            this.writeDurationMsHistogram = metricGroup.histogram("velocity_redis_write_duration_ms",
-                    new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
-            this.writeDelayMsHistogram = metricGroup.histogram("velocity_redis_write_delay_ms",
-                    new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
-            this.writeErrorsCounter = metricGroup.counter("velocity_redis_write_errors_total");
+            // this.writeDurationMsHistogram = metricGroup.histogram("velocity_redis_write_duration_ms",
+            //         new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
+            // this.writeDelayMsHistogram = metricGroup.histogram("velocity_redis_write_delay_ms",
+            //         new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
+            // this.writeErrorsCounter = metricGroup.counter("velocity_redis_write_errors_total");
 
             if (config.getMode() == KeyDbConfig.Mode.CLUSTER) {
                 GenericObjectPoolConfig<Connection> clusterPoolConfig = new GenericObjectPoolConfig<>();
@@ -147,7 +149,7 @@ public class KeyDbSink implements Sink<AnomalyEvent> {
             // deliberate, breaking change to the penalty-store key scheme.
             String key = "penalty:" + event.getId() + ":" + event.getEntityValue();
             String val = event.getProducedAt() != null ? event.getProducedAt() : "1";
-            long writeStartMs = System.currentTimeMillis();
+            // long writeStartMs = System.currentTimeMillis();
             for (int i = 0; i < 3; i++) {
                 try {
                     if (config.getMode() == KeyDbConfig.Mode.CLUSTER) {
@@ -166,17 +168,17 @@ public class KeyDbSink implements Sink<AnomalyEvent> {
                         }
                     }
                     log.info("KeyDB SETEX key={} ttl={}s", key, effectiveTtl);
-                    writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
-                    long producedAtMs = TimeUtils.istStringToEpochMs(event.getProducedAt());
-                    if (producedAtMs > 0) {
-                        writeDelayMsHistogram.update(Math.max(0L, System.currentTimeMillis() - producedAtMs));
-                    }
+                    // writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
+                    // long producedAtMs = TimeUtils.istStringToEpochMs(event.getProducedAt());
+                    // if (producedAtMs > 0) {
+                    //     writeDelayMsHistogram.update(Math.max(0L, System.currentTimeMillis() - producedAtMs));
+                    // }
                     return;
                 } catch (Exception e) {
                     if (i == 2) {
                         log.error("KeyDbSink failed after 3 attempts key={}: {}", key, e.getMessage());
-                        writeErrorsCounter.inc();
-                        writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
+                        // writeErrorsCounter.inc();
+                        // writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
                     } else {
                         log.warn("KeyDbSink attempt {}/3 failed: {}", i + 1, e.getMessage());
                     }

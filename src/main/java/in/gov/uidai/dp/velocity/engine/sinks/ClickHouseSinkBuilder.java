@@ -1,15 +1,15 @@
 package in.gov.uidai.dp.velocity.engine.sinks;
 
-import com.codahale.metrics.SlidingWindowReservoir;
+// import com.codahale.metrics.SlidingWindowReservoir;
 import in.gov.uidai.dp.velocity.engine.config.ClickHouseSinkConfig;
 import in.gov.uidai.dp.velocity.engine.utils.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.api.connector.sink2.WriterInitContext;
-import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
-import org.apache.flink.metrics.Counter;
-import org.apache.flink.metrics.Histogram;
+// import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
+// import org.apache.flink.metrics.Counter;
+// import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.MetricGroup;
 
 import java.io.IOException;
@@ -84,10 +84,12 @@ public final class ClickHouseSinkBuilder {
         // Metric names follow the velocity_clickhouse_<prefix>_write_* scheme —
         // "agg" and "anomaly" prefixes for the two current tables — matching the
         // velocity_redis_write_* naming already established in KeyDbSink.
-        private final Histogram writeDurationMsHistogram;
-        private final Histogram writeDelayMsHistogram;
-        private final Counter writeErrorsCounter;
-        private final Counter rowsWrittenCounter;
+        //
+        // METRICS TEMPORARILY DISABLED — see below.
+        // private final Histogram writeDurationMsHistogram;
+        // private final Histogram writeDelayMsHistogram;
+        // private final Counter writeErrorsCounter;
+        // private final Counter rowsWrittenCounter;
 
         public ClickHouseSinkWriter(ClickHouseSinkConfig config, Function<T, String> rowMapper,
                 Function<T, String> producedAtExtractor, String metricPrefix, MetricGroup metricGroup) {
@@ -109,13 +111,13 @@ public final class ClickHouseSinkBuilder {
                     .executor(executor)
                     .build();
 
-            String prefix = "velocity_clickhouse_" + metricPrefix;
-            this.writeDurationMsHistogram = metricGroup.histogram(prefix + "_write_duration_ms",
-                    new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
-            this.writeDelayMsHistogram = metricGroup.histogram(prefix + "_write_delay_ms",
-                    new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
-            this.writeErrorsCounter = metricGroup.counter(prefix + "_write_errors_total");
-            this.rowsWrittenCounter = metricGroup.counter(prefix + "_rows_written_total");
+            // String prefix = "velocity_clickhouse_" + metricPrefix;
+            // this.writeDurationMsHistogram = metricGroup.histogram(prefix + "_write_duration_ms",
+            //         new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
+            // this.writeDelayMsHistogram = metricGroup.histogram(prefix + "_write_delay_ms",
+            //         new DropwizardHistogramWrapper(new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500))));
+            // this.writeErrorsCounter = metricGroup.counter(prefix + "_write_errors_total");
+            // this.rowsWrittenCounter = metricGroup.counter(prefix + "_rows_written_total");
 
             log.info("ClickHouseSinkWriter[{}] initialized: host={}, db={}, table={}, batchSize={}, flushIntervalMs={}",
                     metricPrefix, hostUrl, database, table, batchSize, flushIntervalMs);
@@ -172,29 +174,29 @@ public final class ClickHouseSinkBuilder {
 
             int maxRetries = 5;
             long[] backoffMs = {500, 1000, 2000, 4000, 8000};
-            long writeStartMs = System.currentTimeMillis();
+            // long writeStartMs = System.currentTimeMillis();
 
             for (int i = 0; i < maxRetries; i++) {
                 try {
                     HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                     if (response.statusCode() == 200) {
                         log.info("Successfully wrote {} records to ClickHouse", toFlush.size());
-                        writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
-                        rowsWrittenCounter.inc(toFlush.size());
-                        recordDelay(toFlush);
+                        // writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
+                        // rowsWrittenCounter.inc(toFlush.size());
+                        // recordDelay(toFlush);
                         return;
                     }
                     log.error("ClickHouse insert failed ({}): body={}", response.statusCode(), response.body());
                     if (response.statusCode() == 400) {
                         // Malformed request/schema mismatch — retrying identical bytes won't
                         // help. Fail loudly (see class doc) rather than silently drop.
-                        writeErrorsCounter.inc();
+                        // writeErrorsCounter.inc();
                         throw new IOException("ClickHouse insert failed with 400 Bad Request (schema/data error), "
                                 + toFlush.size() + " records — failing sink so Flink restarts from the last "
                                 + "checkpoint and replays; ReplacingMergeTree dedups the retry.");
                     }
                     if (i == maxRetries - 1) {
-                        writeErrorsCounter.inc();
+                        // writeErrorsCounter.inc();
                         throw new IOException("ClickHouse insert failed after " + maxRetries + " retries, dropping "
                                 + toFlush.size() + " records would be silent data loss — failing sink instead so "
                                 + "Flink restarts from the last checkpoint and replays.");
@@ -204,7 +206,7 @@ public final class ClickHouseSinkBuilder {
                     throw ioe;
                 } catch (Exception ex) {
                     if (i == maxRetries - 1) {
-                        writeErrorsCounter.inc();
+                        // writeErrorsCounter.inc();
                         throw new IOException("ClickHouse request failed after " + maxRetries + " retries, "
                                 + toFlush.size() + " records — failing sink so Flink restarts from the last "
                                 + "checkpoint and replays.", ex);
@@ -222,14 +224,14 @@ public final class ClickHouseSinkBuilder {
             }
         }
 
-        private void recordDelay(List<T> toFlush) {
-            if (toFlush.isEmpty()) return;
-            String producedAt = producedAtExtractor.apply(toFlush.get(toFlush.size() - 1));
-            long producedAtMs = producedAt != null ? TimeUtils.istStringToEpochMs(producedAt) : -1L;
-            if (producedAtMs > 0) {
-                writeDelayMsHistogram.update(Math.max(0L, System.currentTimeMillis() - producedAtMs));
-            }
-        }
+        // private void recordDelay(List<T> toFlush) {
+        //     if (toFlush.isEmpty()) return;
+        //     String producedAt = producedAtExtractor.apply(toFlush.get(toFlush.size() - 1));
+        //     long producedAtMs = producedAt != null ? TimeUtils.istStringToEpochMs(producedAt) : -1L;
+        //     if (producedAtMs > 0) {
+        //         writeDelayMsHistogram.update(Math.max(0L, System.currentTimeMillis() - producedAtMs));
+        //     }
+        // }
 
         @Override
         public void close() throws IOException {

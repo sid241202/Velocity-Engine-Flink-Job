@@ -81,7 +81,11 @@ public class ClickHouseSinkConfig implements Serializable {
                         isFinal             Bool DEFAULT true""")
                 .orderByColumns("(ruleId, windowStart, groupKey)")
                 .partitionByExpr("toYYYYMMDD(windowStart)")
-                .ttlExpr("toDate(windowStart) + INTERVAL 90 DAY DELETE")
+                // Cut from 90 to 1 day — the Aggregated Analytics UI now caps its
+                // own date-range picker at the last 24 hours to match (see
+                // AggregatedAnalysis.jsx's minDate), so there's no reachable path
+                // that would ever query a row older than this TTL anyway.
+                .ttlExpr("toDate(windowStart) + INTERVAL 1 DAY DELETE")
                 .shardingKeyExpr("cityHash64(ruleId)")
                 .maxBufferSize(AuthDemoConfig.CH_BATCH_SIZE)
                 .flushIntervalMs(AuthDemoConfig.CH_FLUSH_INTERVAL_MS)

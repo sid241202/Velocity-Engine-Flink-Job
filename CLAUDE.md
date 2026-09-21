@@ -25,10 +25,23 @@ autonomy/permission scope — this file only covers what's specific to this repo
   `CountDistinctExact` was fixed to an O(1)-add storage representation
   (was previously re-serializing/scanning on every add).
 - `sinks/ClickHouseSinkBuilder.java`, `ClickHouseResultConverter.java`,
-  `ClickHouseDdlInitializer.java`, `sinks/KeyDbSink.java` (formerly
-  `RedisSink.java` — Redis was replaced by KeyDB, RESP-compatible so the
-  Jedis client and commands are unchanged) — penalty keys are per-entity
-  (fixed from a prior shared/global-key design).
+  `ClickHouseDdlInitializer.java` — **active as of 2026-09-21**, wired into
+  `AuthDemoPipeline.java` as two sinks (`ClickHouseAggSink`,
+  `ClickHouseAnomalySink`). Owns `auth_analytics.auth_velocity_agg_results`
+  and `auth_analytics.auth_velocity_anomaly_events` end to end: DDL
+  create-if-missing (`ClickHouseSinkConfig.forAggResults()`/
+  `forAnomalyEvents()` carry each table's schema — ported from the ClickHouse
+  cluster notebook that used to run this via a Kafka Engine + MV pair
+  directly in ClickHouse, now decommissioned) plus batched HTTP writes with
+  retry/backoff. `ClickHouseSinkBuilder`/`ClickHouseSinkWriter` are generic
+  over the record type (shared by both sinks, not duplicated) and throw on
+  an unrecoverable write failure instead of silently dropping the batch —
+  this fails the sink task, Flink restarts from the last checkpoint and
+  Kafka replays, and the target tables' `ReplacingMergeTree(producedAt)`
+  dedups the replay. `sinks/KeyDbSink.java` (formerly `RedisSink.java` —
+  Redis was replaced by KeyDB, RESP-compatible so the Jedis client and
+  commands are unchanged) — penalty keys are per-entity (fixed from a prior
+  shared/global-key design).
 - `model/VelocityRule.java` and friends — the rule schema shared (as JSON)
   with the backend via `DE.AUTH.VELOCITY_ENGINE.RULES`.
 - `config/AuthDemoConfig.java`, `ClickHouseSinkConfig.java`,

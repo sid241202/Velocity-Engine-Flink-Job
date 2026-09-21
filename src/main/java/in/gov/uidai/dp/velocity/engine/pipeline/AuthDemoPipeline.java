@@ -12,6 +12,9 @@ import in.gov.uidai.dp.velocity.engine.model.AnomalyEvent;
 import in.gov.uidai.dp.velocity.engine.model.Event;
 import in.gov.uidai.dp.velocity.engine.model.Keyed;
 import in.gov.uidai.dp.velocity.engine.model.VelocityRule;
+import in.gov.uidai.dp.velocity.engine.config.ClickHouseSinkConfig;
+import in.gov.uidai.dp.velocity.engine.sinks.ClickHouseResultConverter;
+import in.gov.uidai.dp.velocity.engine.sinks.ClickHouseSinkBuilder;
 import in.gov.uidai.dp.velocity.engine.sinks.KeyDbSink;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -34,8 +37,6 @@ import java.time.Duration;
 
 @Slf4j
 public class AuthDemoPipeline {
-
-        //TODO: Clickhouse DDL to be tried and tested
 
         public void buildAndExecute() throws Exception {
                 Configuration conf = new Configuration();
@@ -137,6 +138,25 @@ public class AuthDemoPipeline {
                                 .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE).build())
                                 .name("AnomalyKafkaSink").uid("anomaly-kafka-sink");
 
+                // ClickHouse Agg Results Sink — Flink owns auth_velocity_agg_results end
+                // to end (DDL create-if-missing + write), replacing the ClickHouse-native
+                // Kafka Engine + MV pair that fed this same table previously.
+                results.sinkTo(ClickHouseSinkBuilder.build(
+                                ClickHouseSinkConfig.forAggResults(),
+                                ClickHouseResultConverter::toAggRow,
+                                AggregationResult::getProducedAt,
+                                "agg"))
+                                .name("ClickHouseAggSink").uid("clickhouse-agg-sink");
+
+                // ClickHouse Anomaly Events Sink — same treatment for
+                // auth_velocity_anomaly_events.
+                anomalyStream.sinkTo(ClickHouseSinkBuilder.build(
+                                ClickHouseSinkConfig.forAnomalyEvents(),
+                                ClickHouseResultConverter::toAnomalyRow,
+                                AnomalyEvent::getProducedAt,
+                                "anomaly"))
+                                .name("ClickHouseAnomalySink").uid("clickhouse-anomaly-sink");
+
                 // KeyDB Anomaly Store Sink (formerly Redis — see KeyDbConfig/KeyDbSink).
                 // uid() is deliberately left as "redis-anomaly-store-sink": Flink matches
                 // operator state to this string on savepoint/checkpoint restore, and
@@ -146,7 +166,7 @@ public class AuthDemoPipeline {
                                 .sinkTo(new KeyDbSink(KeyDbConfig.fromConfig(), AuthDemoConfig.KEYDB_DEFAULT_TTL_SECONDS))
                                 .name("KeyDbAnomalyStoreSink").uid("redis-anomaly-store-sink");
 
-                log.info("Executing UIDAI Velocity Engine — 3-sink: AggKafka + AnomalyKafka + KeyDB");
+                log.info("Executing UIDAI Velocity Engine — 5-sink: AggKafka + AnomalyKafka + ClickHouseAgg + ClickHouseAnomaly + KeyDB");
                 env.execute("UIDAI Velocity Engine Auth Demo");
         }
 }

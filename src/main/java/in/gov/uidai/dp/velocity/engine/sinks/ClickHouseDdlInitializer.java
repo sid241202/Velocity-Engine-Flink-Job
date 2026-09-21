@@ -9,59 +9,58 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
+// Create-if-missing DDL for one ClickHouseSinkConfig-described table: a local
+// ReplicatedReplacingMergeTree (one per shard) plus a Distributed table over
+// it, both ON CLUSTER — mirrors the shape of the notebook's DDL cells for
+// both the agg-results and anomaly-events tables, driven by the columns/
+// order-by/partition/ttl/sharding-key the config carries rather than a
+// hardcoded schema, since this now backs two different table shapes.
 @Slf4j
 public class ClickHouseDdlInitializer {
 
     private ClickHouseDdlInitializer() {}
 
     public static void initialize(ClickHouseSinkConfig config) {
-        log.info("Initializing ClickHouse DDL for database={} table={}", config.getDatabase(), config.getTable());
+        log.info("Initializing ClickHouse DDL: local={}.{} distributed={}.{}",
+                config.getLocalDatabase(), config.getLocalTable(), config.getDatabase(), config.getTable());
 
         HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
         String hostUrl = config.getFirstHostUrl();
-        String clusterClause = config.isUseDistributed() ? " ON CLUSTER " + config.getClusterName() : "";
+        String clusterClause = " ON CLUSTER " + config.getClusterName();
 
-        String createDb = "CREATE DATABASE IF NOT EXISTS " + config.getDatabase() + clusterClause;
-        executeDdl(client, hostUrl, config, createDb);
+        executeDdl(client, hostUrl, config, "CREATE DATABASE IF NOT EXISTS " + config.getLocalDatabase() + clusterClause);
+        executeDdl(client, hostUrl, config, "CREATE DATABASE IF NOT EXISTS " + config.getDatabase() + clusterClause);
 
-        String localTable = config.isUseDistributed() ? config.getTable() + "_local" : config.getTable();
-        String engine = config.isUseDistributed()
-                ? String.format("ReplicatedReplacingMergeTree('%s/{shard}', '{replica}', evaluatedAt)", config.getZookeeperPath())
-                : "ReplacingMergeTree(evaluatedAt)";
+        // ClickHouse resolves {shard}/{replica} server-side via its own macros
+        // config — these are literal tokens, not Java string substitutions.
+        String zkPath = "/clickhouse/tables/{shard}/" + config.getLocalDatabase() + "/" + config.getLocalTable();
+        boolean hasVersion = config.getVersionColumn() != null && !config.getVersionColumn().isEmpty();
+        String engine = String.format("ReplicatedReplacingMergeTree('%s', '{replica}'%s)",
+                zkPath, hasVersion ? ", " + config.getVersionColumn() : "");
 
         String createLocalTable = String.format("""
-            CREATE TABLE IF NOT EXISTS %s.%s %s (
-                ruleId String,
-                ruleName String,
-                sourceTopic String,
-                cluster String,
-                entityName String,
-                groupKey String,
-                windowStart DateTime64(3, 'Asia/Kolkata'),
-                windowEnd DateTime64(3, 'Asia/Kolkata'),
-                windowType String,
-                timeType String,
-                aggregationResults String,
-                thresholdBreached UInt8,
-                severityLevel String,
-                eventCount UInt64,
-                evaluatedAt DateTime64(3, 'Asia/Kolkata')
-            ) ENGINE = %s
-            ORDER BY (ruleId, windowStart, groupKey)
-            """, config.getDatabase(), localTable, clusterClause, engine);
-
+                CREATE TABLE IF NOT EXISTS %s.%s %s
+                (
+                    %s
+                )
+                ENGINE = %s
+                PARTITION BY %s
+                ORDER BY %s
+                TTL %s
+                SETTINGS index_granularity = 8192
+                """,
+                config.getLocalDatabase(), config.getLocalTable(), clusterClause,
+                config.getColumnsDdl(), engine, config.getPartitionByExpr(), config.getOrderByColumns(), config.getTtlExpr());
         executeDdl(client, hostUrl, config, createLocalTable);
 
-        if (config.isUseDistributed()) {
-            String createDistributed = String.format("""
+        String createDistributed = String.format("""
                 CREATE TABLE IF NOT EXISTS %s.%s %s AS %s.%s
-                ENGINE = Distributed(%s, %s, %s, rand())
+                ENGINE = Distributed(%s, %s, %s, %s)
                 """,
                 config.getDatabase(), config.getTable(), clusterClause,
-                config.getDatabase(), localTable,
-                config.getClusterName(), config.getDatabase(), localTable);
-            executeDdl(client, hostUrl, config, createDistributed);
-        }
+                config.getLocalDatabase(), config.getLocalTable(),
+                config.getClusterName(), config.getLocalDatabase(), config.getLocalTable(), config.getShardingKeyExpr());
+        executeDdl(client, hostUrl, config, createDistributed);
     }
 
     private static void executeDdl(HttpClient client, String hostUrl, ClickHouseSinkConfig config, String query) {

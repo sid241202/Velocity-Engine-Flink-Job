@@ -1,7 +1,7 @@
 package in.gov.uidai.dp.velocity.engine.pipeline;
 
 import in.gov.uidai.dp.velocity.engine.config.AuthDemoConfig;
-import in.gov.uidai.dp.velocity.engine.config.KeyDbConfig;
+// import in.gov.uidai.dp.velocity.engine.config.KeyDbConfig; // unused while the KeyDB sink is disabled, see buildAndExecute()
 import in.gov.uidai.dp.velocity.engine.deserializers.EventDeserializer;
 import in.gov.uidai.dp.velocity.engine.deserializers.RuleDeserializer;
 import in.gov.uidai.dp.velocity.engine.functions.AuthDeduplicationFunction;
@@ -15,7 +15,7 @@ import in.gov.uidai.dp.velocity.engine.model.VelocityRule;
 import in.gov.uidai.dp.velocity.engine.config.ClickHouseSinkConfig;
 import in.gov.uidai.dp.velocity.engine.sinks.ClickHouseResultConverter;
 import in.gov.uidai.dp.velocity.engine.sinks.ClickHouseSinkBuilder;
-import in.gov.uidai.dp.velocity.engine.sinks.KeyDbSink;
+// import in.gov.uidai.dp.velocity.engine.sinks.KeyDbSink; // unused while the KeyDB sink is disabled, see buildAndExecute()
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.configuration.Configuration;
@@ -157,16 +157,22 @@ public class AuthDemoPipeline {
                                 "anomaly"))
                                 .name("ClickHouseAnomalySink").uid("clickhouse-anomaly-sink");
 
-                // KeyDB Anomaly Store Sink (formerly Redis — see KeyDbConfig/KeyDbSink).
-                // uid() is deliberately left as "redis-anomaly-store-sink": Flink matches
-                // operator state to this string on savepoint/checkpoint restore, and
-                // changing it buys nothing functionally while risking a restore mismatch
-                // for anyone redeploying from an existing savepoint.
-                results.getSideOutput(RuleEvaluatorFunction.KEYDB_TAG)
-                                .sinkTo(new KeyDbSink(KeyDbConfig.fromConfig(), AuthDemoConfig.KEYDB_DEFAULT_TTL_SECONDS))
-                                .name("KeyDbAnomalyStoreSink").uid("redis-anomaly-store-sink");
+                // KeyDB Anomaly Store Sink — DISABLED 2026-09-22, pending the entity-keyed
+                // KeyDB redesign discussed for Auth services (see
+                // E:\Projects\KEYDB_AUTH_SERVICES_CONTRACT.md). Nothing should write to
+                // KeyDB until that design is finalized and implemented; re-enable by
+                // uncommenting this block and the KeyDbConfig/KeyDbSink imports above.
+                // uid() was deliberately left as "redis-anomaly-store-sink" while this was
+                // live: Flink matches operator state to this string on savepoint/checkpoint
+                // restore, and changing it buys nothing functionally while risking a
+                // restore mismatch for anyone redeploying from an existing savepoint —
+                // keep that in mind when re-enabling from a savepoint taken before this
+                // change.
+                // results.getSideOutput(RuleEvaluatorFunction.KEYDB_TAG)
+                //                 .sinkTo(new KeyDbSink(KeyDbConfig.fromConfig(), AuthDemoConfig.KEYDB_DEFAULT_TTL_SECONDS))
+                //                 .name("KeyDbAnomalyStoreSink").uid("redis-anomaly-store-sink");
 
-                log.info("Executing UIDAI Velocity Engine — 5-sink: AggKafka + AnomalyKafka + ClickHouseAgg + ClickHouseAnomaly + KeyDB");
+                log.info("Executing UIDAI Velocity Engine — 4-sink: AggKafka + AnomalyKafka + ClickHouseAgg + ClickHouseAnomaly (KeyDB sink disabled)");
                 env.execute("UIDAI Velocity Engine Auth Demo");
         }
 }

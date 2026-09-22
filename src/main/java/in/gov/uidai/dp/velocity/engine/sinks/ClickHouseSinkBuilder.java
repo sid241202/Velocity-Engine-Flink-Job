@@ -177,50 +177,67 @@ public final class ClickHouseSinkBuilder {
             // long writeStartMs = System.currentTimeMillis();
 
             for (int i = 0; i < maxRetries; i++) {
+                // httpClient.send() itself throwing (connection refused, reset, timeout,
+                // DNS blip) is exactly the transient failure this retry loop exists to
+                // absorb — it must be retried the same as a non-200 response, not
+                // propagated immediately. Keeping it in its own try/catch (rather than
+                // one try wrapping both the send() and the status-code handling below)
+                // is what makes that distinction possible: the deliberate throw new
+                // IOException(...) calls below (400 / retries-exhausted) are true
+                // terminal failures and must NOT be caught and retried by this block.
+                HttpResponse<String> response;
                 try {
-                    HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                    if (response.statusCode() == 200) {
-                        log.info("Successfully wrote {} records to ClickHouse", toFlush.size());
-                        // writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
-                        // rowsWrittenCounter.inc(toFlush.size());
-                        // recordDelay(toFlush);
-                        return;
-                    }
-                    log.error("ClickHouse insert failed ({}): body={}", response.statusCode(), response.body());
-                    if (response.statusCode() == 400) {
-                        // Malformed request/schema mismatch — retrying identical bytes won't
-                        // help. Fail loudly (see class doc) rather than silently drop.
-                        // writeErrorsCounter.inc();
-                        throw new IOException("ClickHouse insert failed with 400 Bad Request (schema/data error), "
-                                + toFlush.size() + " records — failing sink so Flink restarts from the last "
-                                + "checkpoint and replays; ReplacingMergeTree dedups the retry.");
-                    }
-                    if (i == maxRetries - 1) {
-                        // writeErrorsCounter.inc();
-                        throw new IOException("ClickHouse insert failed after " + maxRetries + " retries, dropping "
-                                + toFlush.size() + " records would be silent data loss — failing sink instead so "
-                                + "Flink restarts from the last checkpoint and replays.");
-                    }
-                    log.warn("Retrying {}/{}...", i + 1, maxRetries);
+                    response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted during ClickHouse HTTP send, "
+                            + toFlush.size() + " records unflushed", e);
                 } catch (IOException ioe) {
-                    throw ioe;
-                } catch (Exception ex) {
                     if (i == maxRetries - 1) {
                         // writeErrorsCounter.inc();
                         throw new IOException("ClickHouse request failed after " + maxRetries + " retries, "
                                 + toFlush.size() + " records — failing sink so Flink restarts from the last "
-                                + "checkpoint and replays.", ex);
+                                + "checkpoint and replays.", ioe);
                     }
-                    log.warn("ClickHouse request failed. Retrying {}/{}...", i + 1, maxRetries, ex);
+                    log.warn("ClickHouse request failed (network). Retrying {}/{}...", i + 1, maxRetries, ioe);
+                    sleepBackoff(backoffMs[i], toFlush.size());
+                    continue;
                 }
 
-                try {
-                    Thread.sleep(backoffMs[i]);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted during ClickHouse write backoff, "
-                            + toFlush.size() + " records unflushed", e);
+                if (response.statusCode() == 200) {
+                    log.info("Successfully wrote {} records to ClickHouse", toFlush.size());
+                    // writeDurationMsHistogram.update(System.currentTimeMillis() - writeStartMs);
+                    // rowsWrittenCounter.inc(toFlush.size());
+                    // recordDelay(toFlush);
+                    return;
                 }
+                log.error("ClickHouse insert failed ({}): body={}", response.statusCode(), response.body());
+                if (response.statusCode() == 400) {
+                    // Malformed request/schema mismatch — retrying identical bytes won't
+                    // help. Fail loudly (see class doc) rather than silently drop.
+                    // writeErrorsCounter.inc();
+                    throw new IOException("ClickHouse insert failed with 400 Bad Request (schema/data error), "
+                            + toFlush.size() + " records — failing sink so Flink restarts from the last "
+                            + "checkpoint and replays; ReplacingMergeTree dedups the retry.");
+                }
+                if (i == maxRetries - 1) {
+                    // writeErrorsCounter.inc();
+                    throw new IOException("ClickHouse insert failed after " + maxRetries + " retries, dropping "
+                            + toFlush.size() + " records would be silent data loss — failing sink instead so "
+                            + "Flink restarts from the last checkpoint and replays.");
+                }
+                log.warn("Retrying {}/{}...", i + 1, maxRetries);
+                sleepBackoff(backoffMs[i], toFlush.size());
+            }
+        }
+
+        private void sleepBackoff(long ms, int pendingRecords) throws IOException {
+            try {
+                Thread.sleep(ms);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted during ClickHouse write backoff, "
+                        + pendingRecords + " records unflushed", e);
             }
         }
 

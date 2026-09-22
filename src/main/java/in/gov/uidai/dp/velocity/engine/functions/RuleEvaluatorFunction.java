@@ -67,20 +67,26 @@ public class RuleEvaluatorFunction
     @Override
     public void open(OpenContext parameters) throws Exception {
         mapper = new ObjectMapper();
-        // TTL cut 48h -> 12h (FINAL_DEMO_SPECS.txt section 2.2, 2026-09-22):
-        // none of the three states below encode any cross-window fraud-
-        // history — ruleSnapshotState is a point-in-time rule copy rebuilt
-        // on the next event, anomalyFiredState is actively pruned every
-        // window close (see onTimer's own pruneBeforeMs pruning) and an
-        // empty set after expiry is behaviorally identical to a freshly
-        // re-created one, and aggEarlyFireState resetting just means the
-        // next early-fire isn't throttled by a stale timestamp. The real
-        // correctness floor is only max(window size) + max(configured
-        // allowedLatenessMs across active rules) + operational margin for
-        // checkpoint-restore replay — currently well under an hour, not
-        // days. 12h keeps generous margin above that floor while cutting
-        // RocksDB's 48h-tail footprint roughly in half.
-        StateTtlConfig ttl = StateTtlConfig.newBuilder(Duration.ofHours(12))
+        // TTL cut 48h -> 12h -> 2h (FINAL_DEMO_SPECS.txt section 2.2,
+        // 2026-09-22): none of the three states below encode any
+        // cross-window fraud-history — ruleSnapshotState is a point-in-time
+        // rule copy rebuilt on the next event, anomalyFiredState is
+        // actively pruned every window close (see onTimer's own
+        // pruneBeforeMs pruning) and an empty set after expiry is
+        // behaviorally identical to a freshly re-created one, and
+        // aggEarlyFireState resetting just means the next early-fire isn't
+        // throttled by a stale timestamp. The real correctness floor is
+        // only max(window size) + max(configured allowedLatenessMs across
+        // active rules) + operational margin for checkpoint-restore replay
+        // — currently well under an hour (windows top out at 5 minutes,
+        // allowedLatenessMs defaults to 0 and no deployed rule sets it
+        // nonzero). 2h keeps a real margin above that floor — note this
+        // margin narrows if a future rule is ever configured with a large
+        // "Late Event Grace" value (RuleBuilder.jsx currently enforces no
+        // maximum on that field) — while cutting RocksDB's worst-case
+        // 24-rule tail footprint to roughly an eighth of the original 48h
+        // figure.
+        StateTtlConfig ttl = StateTtlConfig.newBuilder(Duration.ofHours(2))
                 .setUpdateType(StateTtlConfig.UpdateType.OnReadAndWrite)
                 .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
                 .cleanupInRocksdbCompactFilter(1000).build();

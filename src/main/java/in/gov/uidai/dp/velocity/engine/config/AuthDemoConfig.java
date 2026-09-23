@@ -3,7 +3,7 @@ package in.gov.uidai.dp.velocity.engine.config;
 public final class AuthDemoConfig {
 
     // ==================== KAFKA ====================
-    public static final String KAFKA_BOOTSTRAP = "10.10.73.105:9092,10.10.74.200:9092,10.10.74.86:9092";
+    public static final String KAFKA_BOOTSTRAP = "10.10.107.160:9092,10.10.107.95:9092,10.10.107.151:9092,10.10.106.116:9092,10.10.105.220:9092";
     public static final String AUTH_TOPIC             = "BI.AUTH.AUTH_TXN.UNION.V1";
     public static final String AUTH_CONSUMER_GROUP    = "STROT.APPLICATION.VELOCITY_ENGINE";
     public static final String RULES_TOPIC            = "DE.AUTH.VELOCITY_ENGINE.RULES";
@@ -62,8 +62,7 @@ public final class AuthDemoConfig {
     // VELOCITY_ENGINE_PARALLELISM without a rebuild; defaults to 8, the low end
     // of this topic's known 8-9 partition range, so a stale/unset value never
     // silently exceeds the partition count.
-    public static final int JOB_PARALLELISM = Integer.parseInt(
-            System.getenv().getOrDefault("VELOCITY_ENGINE_PARALLELISM", "8"));
+    public static final int JOB_PARALLELISM = 9;
     public static final long MAX_WATERMARK_LAG_MS = 60000;
     public static final long DEDUP_TTL_MINUTES    = 15;
     /** Minimum wall-clock gap between early-fire (partial) AggregationResult emissions per group key. */

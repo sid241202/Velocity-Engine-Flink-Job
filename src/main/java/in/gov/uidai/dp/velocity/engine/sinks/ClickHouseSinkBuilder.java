@@ -13,6 +13,7 @@ import org.apache.flink.api.connector.sink2.WriterInitContext;
 import org.apache.flink.metrics.MetricGroup;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -33,10 +34,16 @@ import java.util.function.Function;
 @Slf4j
 public final class ClickHouseSinkBuilder {
 
+    @FunctionalInterface
+    public interface SerializableFunction<T, R> extends Function<T, R>, Serializable {}
+
     private ClickHouseSinkBuilder() {}
 
-    public static <T> Sink<T> build(ClickHouseSinkConfig config, Function<T, String> rowMapper,
-            Function<T, String> producedAtExtractor, String metricPrefix) {
+    public static <T> Sink<T> build(ClickHouseSinkConfig config,
+                                    SerializableFunction<T, String> rowMapper,
+                                    SerializableFunction<T, String> producedAtExtractor,
+                                    String metricPrefix) {
+
         if (config.isAutoCreateDdl()) {
             ClickHouseDdlInitializer.initialize(config);
         }
@@ -47,12 +54,14 @@ public final class ClickHouseSinkBuilder {
         private static final long serialVersionUID = 1L;
 
         private final ClickHouseSinkConfig config;
-        private final Function<T, String> rowMapper;
-        private final Function<T, String> producedAtExtractor;
+        private final SerializableFunction<T, String> rowMapper;          // UPDATED
+        private final SerializableFunction<T, String> producedAtExtractor; // UPDATED
         private final String metricPrefix;
 
-        public AsyncClickHouseHttpSink(ClickHouseSinkConfig config, Function<T, String> rowMapper,
-                Function<T, String> producedAtExtractor, String metricPrefix) {
+        public AsyncClickHouseHttpSink(ClickHouseSinkConfig config,
+                                       SerializableFunction<T, String> rowMapper,                // UPDATED
+                                       SerializableFunction<T, String> producedAtExtractor,      // UPDATED
+                                       String metricPrefix) {
             this.config = config;
             this.rowMapper = rowMapper;
             this.producedAtExtractor = producedAtExtractor;
@@ -73,8 +82,8 @@ public final class ClickHouseSinkBuilder {
         private final String table;
         private final int batchSize;
         private final long flushIntervalMs;
-        private final Function<T, String> rowMapper;
-        private final Function<T, String> producedAtExtractor;
+        private final SerializableFunction<T, String> rowMapper;
+        private final SerializableFunction<T, String> producedAtExtractor;
 
         private final List<T> buffer;
         private final HttpClient httpClient;
@@ -91,8 +100,10 @@ public final class ClickHouseSinkBuilder {
         // private final Counter writeErrorsCounter;
         // private final Counter rowsWrittenCounter;
 
-        public ClickHouseSinkWriter(ClickHouseSinkConfig config, Function<T, String> rowMapper,
-                Function<T, String> producedAtExtractor, String metricPrefix, MetricGroup metricGroup) {
+        public ClickHouseSinkWriter(ClickHouseSinkConfig config,
+                                    SerializableFunction<T, String> rowMapper,
+                                    SerializableFunction<T, String> producedAtExtractor,
+                                    String metricPrefix, MetricGroup metricGroup) {
             this.hostUrl = config.getFirstHostUrl();
             this.user = config.getUser();
             this.password = config.getPassword();
